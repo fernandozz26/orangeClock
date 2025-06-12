@@ -44,6 +44,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
   );
   const [audios, setAudios] = useState([]);
   const [audioPreview, setAudioPreview] = useState(null);
+  const [errorAlarma, setErrorAlarma] = useState("");
 
   // Obtener lista de audios al cargar el formulario
   useEffect(() => {
@@ -96,6 +97,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
 
   const guardarAlarma = async (e) => {
     e.preventDefault();
+    setErrorAlarma("");
     let repeticion = null;
     let fecha = null;
     if (modoRepeticion === "semana" && diasSeleccionados.length > 0) {
@@ -116,6 +118,11 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
       }
       onSave();
     } catch (error) {
+      if (error.response && error.response.data && error.response.data.error) {
+        setErrorAlarma(error.response.data.error);
+      } else {
+        setErrorAlarma("Error al guardar la alarma");
+      }
       console.error("Error al guardar la alarma:", error);
     }
   };
@@ -129,12 +136,19 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
   return (
     <form onSubmit={guardarAlarma} className="p-3 rounded bg-white shadow-sm w-100" style={{maxWidth: 600, margin: '0 auto'}}>
       <h2 className="mb-3 text-center">{alarmaSeleccionada ? "Editar Alarma" : "Nueva Alarma"}</h2>
+      {errorAlarma && (
+        <div className="alert alert-danger text-center" role="alert" style={{fontWeight:600, fontSize:17}}>
+          {errorAlarma}
+        </div>
+      )}
       <div className="mb-3">
         <label className="form-label fw-bold fs-5 text-primary">Audio:</label>
         <div className="row g-2 align-items-center">
           <div className="col-12 col-md-8">
             <div className="input-group shadow rounded border border-info bg-white p-2 align-items-center" style={{minHeight: 60}}>
-              <span className="input-group-text bg-info text-white border-info" style={{fontSize: 22}}><FaRegFileAudio /></span>
+              <span className="input-group-text" style={{fontSize: 22, background: '#0d6efd', color: '#fff', border: 'none'}} title="Menú para seleccionar audio">
+                <FaRegFileAudio style={{color: '#fff'}} />
+              </span>
               <select
                 className="form-select border-0 text-dark fw-semibold fs-6"
                 value={audio}
@@ -143,9 +157,10 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
                   setAudioPreview(null); // Limpiar preview al cambiar audio
                 }}
                 required
-                style={{ minHeight: 45, boxShadow: 'none', background: '#f4f4f4', borderRadius: 8, border: '1px solid #adb5bd' }}
+                aria-label="Seleccionar audio para la alarma"
+                style={{ minHeight: 45, boxShadow: 'none', background: '#f4f4f4', borderRadius: 8, border: '1px solid #adb5bd', cursor: 'pointer' }}
               >
-                <option value="">Selecciona un audio</option>
+                <option value="" disabled>Selecciona un audio...</option>
                 {audios.map((a) => (
                   <option key={a.ruta} value={a.ruta}>
                     {a.nombre}
@@ -158,7 +173,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
             {audio && (
               <button
                 type="button"
-                className="btn btn-success btn-lg d-flex align-items-center px-4 py-2 shadow border-0"
+                className="btn btn-primary btn-lg d-flex align-items-center px-4 py-2 shadow border-0"
                 onClick={() => setAudioPreview(audio)}
                 style={{ fontWeight: 700, fontSize: 18, borderRadius: 8 }}
               >
@@ -252,7 +267,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
             <div className="col-12 col-md-6">
               <input
                 type="date"
-                className="form-control form-control-lg border-warning text-center"
+                className="form-control form-control-lg border-dark text-center"
                 value={fechaAnio ? `${new Date().getFullYear()}-${fechaAnio}` : ""}
                 onChange={(e) => {
                   const val = e.target.value;
@@ -265,20 +280,20 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
                 }}
                 placeholder="MM-DD"
                 required={modoRepeticion === "anio"}
-                style={{fontSize: 22, background: '#fffbe7', fontWeight: 600, borderRadius: 8}}
+                style={{fontSize: 22, background: '#f4f4f4', fontWeight: 600, borderRadius: 8, color: '#222', borderColor: '#444'}}
               />
             </div>
             <div className="col-12 col-md-6">
               <input
                 type="time"
-                className="form-control form-control-lg border-warning text-center"
+                className="form-control form-control-lg border-dark text-center"
                 value={hora}
                 onChange={e => setHora(e.target.value)}
                 required={modoRepeticion === "anio"}
-                style={{fontSize: 22, background: '#fffbe7', fontWeight: 600, borderRadius: 8}}
+                style={{fontSize: 22, background: '#f4f4f4', fontWeight: 600, borderRadius: 8, color: '#222', borderColor: '#444'}}
               />
             </div>
-            <span className="ms-2 text-warning" style={{ fontSize: 15, fontWeight: 500 }}>(elige un día y hora, se repetirá cada año)</span>
+            <span className="ms-2 text-dark" style={{ fontSize: 15, fontWeight: 500 }}>(elige un día y hora, se repetirá cada año)</span>
           </div>
         )}
         {modoRepeticion === "unica" && (
@@ -290,7 +305,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
                 value={fechaUnica}
                 onChange={e => setFechaUnica(e.target.value)}
                 required={modoRepeticion === "unica"}
-                style={{fontSize: 22, background: '#e7fae7', fontWeight: 600, borderRadius: 8}}
+                style={{fontSize: 22, background: '#f4f4f4', fontWeight: 600, borderRadius: 8, color: '#222', borderColor: '#888'}}
               />
             </div>
             <div className="col-12 col-md-6">
@@ -300,10 +315,10 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
                 value={hora}
                 onChange={e => setHora(e.target.value)}
                 required={modoRepeticion === "unica"}
-                style={{fontSize: 22, background: '#e7fae7', fontWeight: 600, borderRadius: 8}}
+                style={{fontSize: 22, background: '#f4f4f4', fontWeight: 600, borderRadius: 8, color: '#222', borderColor: '#888'}}
               />
             </div>
-            <span className="ms-2 text-success" style={{ fontSize: 15, fontWeight: 500 }}>(elige una fecha y hora específica, la alarma solo sonará una vez)</span>
+            <span className="ms-2 text-dark" style={{ fontSize: 15, fontWeight: 500 }}>(elige una fecha y hora específica, la alarma solo sonará una vez)</span>
           </div>
         )}
       </div>

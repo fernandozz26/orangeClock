@@ -28,32 +28,13 @@ const AlarmaList = ({ onEdit }) => {
   const [alarmas, setAlarmas] = useState([]);
   const [pagina, setPagina] = useState(1);
 
-  // Obtener alarmas al cargar el componente
+  // Obtener todas las alarmas programadas desde siempre (no solo próximas)
   useEffect(() => {
     const fetchAlarmas = async () => {
       try {
         const response = await axios.get("http://127.0.0.1:5000/consultar_alarmas");
         let alarmas = response.data.alarmas_programadas;
-        // Clasificación y ordenamiento
-        const semana = [], unica = [], anio = [];
-        alarmas.forEach(a => {
-          if (a.repeticion && a.repeticion.match(/^(mon|tue|wed|thu|fri|sat|sun)(-(mon|tue|wed|thu|fri|sat|sun))*$/)) {
-            semana.push(a);
-          } else if (!a.repeticion) {
-            unica.push(a);
-          } else if (a.repeticion && a.repeticion.match(/^\d{2}-\d{2}$/)) {
-            anio.push(a);
-          }
-        });
-        // Ordenar cada grupo por hora y fecha si aplica
-        semana.sort((a, b) => a.hora.localeCompare(b.hora));
-        unica.sort((a, b) => {
-          return (a.hora).localeCompare(b.hora);
-        });
-        anio.sort((a, b) => a.repeticion.localeCompare(b.repeticion) || a.hora.localeCompare(b.hora));
-        // Concatenar en el orden pedido
-        const alarmasOrdenadas = [...semana, ...unica, ...anio];
-        setAlarmas(alarmasOrdenadas);
+        setAlarmas(alarmas);
       } catch (error) {
         console.error("Error al obtener las alarmas:", error);
       }
@@ -95,21 +76,7 @@ const AlarmaList = ({ onEdit }) => {
                     await axios.post("http://127.0.0.1:5000/crear_alarma", nuevaAlarma);
                     const response = await axios.get("http://127.0.0.1:5000/consultar_alarmas");
                     let alarmas = response.data.alarmas_programadas;
-                    const semana = [], unica = [], anio = [];
-                    alarmas.forEach(a => {
-                      if (a.repeticion && a.repeticion.match(/^(mon|tue|wed|thu|fri|sat|sun)(-(mon|tue|wed|thu|fri|sat|sun))*$/)) {
-                        semana.push(a);
-                      } else if (!a.repeticion) {
-                        unica.push(a);
-                      } else if (a.repeticion && a.repeticion.match(/^\d{2}-\d{2}$/)) {
-                        anio.push(a);
-                      }
-                    });
-                    semana.sort((a, b) => a.hora.localeCompare(b.hora));
-                    unica.sort((a, b) => (a.hora).localeCompare(b.hora));
-                    anio.sort((a, b) => a.repeticion.localeCompare(b.repeticion) || a.hora.localeCompare(b.hora));
-                    const alarmasOrdenadas = [...semana, ...unica, ...anio];
-                    setAlarmas(alarmasOrdenadas);
+                    setAlarmas(alarmas);
                   } catch (error) {
                     alert("Error al duplicar la alarma");
                   }

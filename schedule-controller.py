@@ -66,36 +66,67 @@ def reproducir_audio(audio_path):
         print(f"[CRON] Error al reproducir audio: {e}")
 
 def cargar_alarmas():
+    # 1. Limpiar todos los jobs existentes
+    for job in scheduler.get_jobs():
+        scheduler.remove_job(job.id)
+
     conn = sqlite3.connect('alarmas.db')
     cursor = conn.cursor()
-    cursor.execute("SELECT hora, audio, repeticion FROM alarmas")  # Incluye repetición
-    alarmas = cursor.fetchall()
+    try:
+        cursor.execute("SELECT id, hora, audio, repeticion, fecha FROM alarmas")
+        alarmas = cursor.fetchall()
+    except Exception:
+        cursor.execute("SELECT id, hora, audio, repeticion FROM alarmas")
+        alarmas = [(id, hora, audio, repeticion, None) for id, hora, audio, repeticion in cursor.fetchall()]
     conn.close()
 
-    for hora, audio, repeticion in alarmas:
+    for id, hora, audio, repeticion, fecha in alarmas:
+        def ejecutar_alarma(audio_path=audio):
+            reproducir_audio(audio_path)
         try:
-            job_kwargs = {
-                'func': reproducir_audio,
-                'trigger': 'cron',
-                'hour': hora.split(':')[0],
-                'minute': hora.split(':')[1],
-                'args': [audio]
-            }
-            if repeticion:
-                # Si es solo letras (ej: mon-fri, sun)
-                if repeticion.isalpha() or ('-' in repeticion and all(x.isalpha() for x in repeticion.replace('-', ''))):
-                    job_kwargs['day_of_week'] = repeticion
-                # Si es solo dígitos (mes o día del mes)
+            if fecha and fecha != 'None':
+                # Alarma de única vez
+                from datetime import datetime
+                run_date = f"{fecha} {hora}"
+                scheduler.add_job(
+                    ejecutar_alarma,
+                    'date',
+                    run_date=datetime.strptime(run_date, "%Y-%m-%d %H:%M"),
+                    id=str(id)
+                )
+            elif repeticion and repeticion != 'None':
+                # Alarmas recurrentes
+                cron_kwargs = {
+                    'hour': hora.split(':')[0],
+                    'minute': hora.split(':')[1],
+                    'id': str(id)
+                }
+                # Semanal (ej: mon, tue-wed)
+                dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
+                if all(d in dias_semana for d in repeticion.split('-')):
+                    cron_kwargs['day_of_week'] = repeticion
+                # Anual (MM-DD)
+                elif len(repeticion) == 5 and repeticion[2] == '-':
+                    mes, dia = repeticion.split('-')
+                    cron_kwargs['month'] = mes
+                    cron_kwargs['day'] = dia
+                # Mensual (día del mes)
                 elif repeticion.isdigit():
-                    job_kwargs['month'] = repeticion
-                # Si es una lista de días del mes separados por comas
-                elif all(x.isdigit() for x in repeticion.split(',')):
-                    job_kwargs['day'] = repeticion
-                # Si no es válido, no se agrega nada extra
-            scheduler.add_job(**job_kwargs)
+                    cron_kwargs['day'] = repeticion
+                scheduler.add_job(ejecutar_alarma, 'cron', **cron_kwargs)
+            else:
+                # Alarma diaria
+                scheduler.add_job(
+                    ejecutar_alarma,
+                    'cron',
+                    hour=hora.split(':')[0],
+                    minute=hora.split(':')[1],
+                    id=str(id)
+                )
         except Exception as e:
-            print(f"Error al cargar la alarma {hora}, {audio}, {repeticion}: {e}")
+            print(f"[CRON] Error al cargar la alarma id={id}, hora={hora}, audio={audio}, rep={repeticion}, fecha={fecha}: {e}")
 
+# Llamar a cargar_alarmas() al inicio
 cargar_alarmas()  # Cargar alarmas al inicio
 
 @app.route('/crear_alarma', methods=['POST'])
@@ -103,8 +134,18 @@ def crear_alarma():
     datos = request.json
     hora = datos.get('hora')
     audio = datos.get('audio')
-    repeticion = datos.get('repeticion')  # Nuevo campo
-    fecha = datos.get('fecha')  # Campo opcional para alarmas únicas
+    repeticion = datos.get('repeticion')
+    fecha = datos.get('fecha')
+
+    # Filtro robusto: no permitir alarmas que se crucen en el mismo horario, sin importar tipo
+    # Si hay una alarma en la misma hora, no permitir guardar otra, sin importar tipo ni campos
+    conn = sqlite3.connect('alarmas.db')
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM alarmas WHERE hora=?", (hora,))
+    existe = cursor.fetchone()[0]
+    if existe:
+        conn.close()
+        return jsonify({'error': 'No se puede establecer alarma, ya existe una establecida en este horario'}), 400
 
     # Guardar en la base de datos (ahora sí guarda fecha si aplica)
     conn = sqlite3.connect('alarmas.db')
