@@ -1,0 +1,46 @@
+
+✔ Creación del Entorno Virtual
+python3 -m venv /home/orangepi/clock_api_env
+source /home/orangepi/clock_api_env/bin/activate
+
+✔ Instalación de Paquetes
+pip install flask flask-cors apscheduler pygame waitress
+
+✔ Archivo de Servicio
+
+[Unit]
+Description=My Flask REST API
+After=network.target
+
+[Service]
+Type=simple
+User=orangepi  # Usar el usuario correcto (ver con `whoami`)
+Group=orangepi
+WorkingDirectory=/home/orangepi/clock_api
+ExecStart=/home/orangepi/clock_api_env/bin/python3 /home/orangepi/clock_api/schedule-controller.py
+Restart=always
+RestartSec=3s
+Environment="PATH=/home/orangepi/clock_api_env/bin:/usr/bin"
+
+[Install]
+WantedBy=multi-user.target
+
+
+✔ Comandos para Gestionar el Servicio
+sudo systemctl daemon-reload
+sudo systemctl enable clock_api.service  # Habilitar inicio automático
+sudo systemctl start clock_api.service
+sudo systemctl status clock_api.service 
+
+🔧 Error 1: Permisos Denegados ([Errno 13])
+sudo chown -R orangepi:orangepi /ruta/al/directorio
+sudo chmod -R 755 /ruta/al/directorio
+
+🔧 Error 2: ModuleNotFoundError
+source /home/orangepi/clock_api_env/bin/activate
+pip install nombre_paquete
+
+
+sudo systemctl daemon-reload
+sudo systemctl restart clock_api.service
+sudo systemctl status clock_api.service

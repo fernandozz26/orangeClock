@@ -1,0 +1,30 @@
+1. Instalar Caddy
+
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update
+sudo apt install caddy
+
+2. Preparar Permisos
+sudo chmod 755 /home/orangepi  # Permite acceso a Caddy
+sudo chown -R caddy:caddy /home/orangepi/clock_frontend/build
+
+3. Configurar Caddyfile
+sudo nano /etc/caddy/Caddyfile
+
+:80 {
+    root * /home/orangepi/clock_frontend/build
+    file_server {
+        hide .git
+    }
+    try_files {path} /index.html
+}
+
+4. Reiniciar Caddy
+
+sudo systemctl restart caddy
+
+✅ Verificación
+
+curl -I http://localhost

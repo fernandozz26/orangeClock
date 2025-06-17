@@ -8,6 +8,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import platform
 from datetime import datetime, timedelta
+from waitress import serve
 
 # Variables globales
 pygame.init()
@@ -483,4 +484,5 @@ def alarmas_proximas():
 
 # iniciar api Flask tiene que ir al final del script
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    #app.run(host='0.0.0.0', port=5000)
+    serve(app, host='0.0.0.0', port=5000)
