@@ -50,7 +50,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
   useEffect(() => {
     const fetchAudios = async () => {
       try {
-        const res = await axios.get("http://127.0.0.1:5000/audios");
+        const res = await axios.get("/audios");
         setAudios(res.data);
       } catch (err) {
         setAudios([]);
@@ -112,9 +112,9 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
       const payload = { hora, audio, repeticion };
       if (fecha) payload.fecha = fecha;
       if (alarmaSeleccionada && alarmaSeleccionada.id) {
-        await axios.put(`http://127.0.0.1:5000/editar_alarma/${alarmaSeleccionada.id}`, payload);
+        await axios.put(`/editar_alarma/${alarmaSeleccionada.id}`, payload);
       } else {
-        await axios.post("http://127.0.0.1:5000/crear_alarma", payload);
+        await axios.post("/crear_alarma", payload);
       }
       onSave();
     } catch (error) {

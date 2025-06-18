@@ -32,7 +32,7 @@ const AlarmaList = ({ onEdit }) => {
   useEffect(() => {
     const fetchAlarmas = async () => {
       try {
-        const response = await axios.get("http://127.0.0.1:5000/consultar_alarmas");
+        const response = await axios.get("/consultar_alarmas");
         let alarmas = response.data.alarmas_programadas;
         setAlarmas(alarmas);
       } catch (error) {
@@ -49,7 +49,7 @@ const AlarmaList = ({ onEdit }) => {
   // Eliminar alarma
   const eliminarAlarma = async (id) => {
     try {
-      await axios.delete(`http://127.0.0.1:5000/eliminar_alarma/${id}`);
+      await axios.delete(`/eliminar_alarma/${id}`);
       setAlarmas(alarmas.filter((alarma) => alarma.id !== id));
     } catch (error) {
       console.error("Error al eliminar la alarma:", error);
@@ -73,8 +73,8 @@ const AlarmaList = ({ onEdit }) => {
                 <button className="btn btn-outline-secondary btn-sm me-2 d-flex align-items-center gap-1" onClick={async () => {
                   const { id, ...nuevaAlarma } = alarma;
                   try {
-                    await axios.post("http://127.0.0.1:5000/crear_alarma", nuevaAlarma);
-                    const response = await axios.get("http://127.0.0.1:5000/consultar_alarmas");
+                    await axios.post("/crear_alarma", nuevaAlarma);
+                    const response = await axios.get("/consultar_alarmas");
                     let alarmas = response.data.alarmas_programadas;
                     setAlarmas(alarmas);
                   } catch (error) {

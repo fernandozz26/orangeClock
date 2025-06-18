@@ -14,7 +14,7 @@ const AudioPanel = () => {
 
   const fetchAudios = async () => {
     try {
-      const res = await axios.get("http://127.0.0.1:5000/audios");
+      const res = await axios.get("/audios");
       setAudios(res.data);
     } catch {
       setAudios([]);
@@ -31,7 +31,7 @@ const AudioPanel = () => {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      await axios.post("http://127.0.0.1:5000/audios", formData);
+      await axios.post("/audios", formData);
       setMensaje("Audio subido correctamente");
       setFile(null);
       fetchAudios();
@@ -47,7 +47,7 @@ const AudioPanel = () => {
   const handleDelete = async (ruta) => {
     const nombre = ruta.split("/").pop();
     try {
-      await axios.delete(`http://127.0.0.1:5000/audios/${nombre}`);
+      await axios.delete(`/audios/${nombre}`);
       setMensaje("Audio eliminado");
       fetchAudios();
     } catch {
@@ -67,7 +67,7 @@ const AudioPanel = () => {
       return;
     }
     try {
-      await axios.put(`http://127.0.0.1:5000/audios/${nombre}`, { nuevo_nombre: baseName });
+      await axios.put(`/audios/${nombre}`, { nuevo_nombre: baseName });
       setMensaje("Audio renombrado");
       setNuevoNombre("");
       setEditandoNombre("");
