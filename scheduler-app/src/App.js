@@ -17,7 +17,7 @@ const App = () => {
     setCargandoProximas(true);
     setErrorProximas("");
     try {
-      const res = await fetch("http://127.0.0.1:5000/alarmas_proximas");
+      const res = await fetch("/api/alarmas_proximas");
       if (!res.ok) throw new Error("Error al consultar alarmas próximas");
       const data = await res.json();
       setAlarmasProximas(data.alarmas_proximas || []);
