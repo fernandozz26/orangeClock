@@ -14,7 +14,7 @@ from waitress import serve
 pygame.init()
 app = Flask(__name__)
 CORS(app) # Habilitar CORS para todas las rutas
-CORS(app, origins=["http://localhost:3000"])
+#CORS(app, origins=["http://localhost:3000"])
 scheduler = BackgroundScheduler()
 scheduler.start()
 
