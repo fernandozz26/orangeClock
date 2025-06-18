@@ -50,7 +50,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
   useEffect(() => {
     const fetchAudios = async () => {
       try {
-        const res = await axios.get("/audios");
+        const res = await axios.get("/api/audios");
         setAudios(res.data);
       } catch (err) {
         setAudios([]);
@@ -112,9 +112,9 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
       const payload = { hora, audio, repeticion };
       if (fecha) payload.fecha = fecha;
       if (alarmaSeleccionada && alarmaSeleccionada.id) {
-        await axios.put(`/editar_alarma/${alarmaSeleccionada.id}`, payload);
+        await axios.put(`/api/editar_alarma/${alarmaSeleccionada.id}`, payload);
       } else {
-        await axios.post("/crear_alarma", payload);
+        await axios.post("/api/crear_alarma", payload);
       }
       onSave();
     } catch (error) {
@@ -185,7 +185,7 @@ const AlarmaForm = ({ alarmaSeleccionada, onSave, onCancel }) => {
         {audioPreview && (
           <div className="mt-3 p-2 bg-light border border-info rounded shadow-sm">
             <audio controls autoPlay className="w-100" onEnded={() => setAudioPreview(null)}>
-              <source src={`http://localhost:5000/audios/${audioPreview}`} />
+              <source src={`/api/audios/${audioPreview}`} />
               Tu navegador no soporta el elemento de audio.
             </audio>
             <div className="text-center text-info mt-1" style={{fontWeight: 500}}>

@@ -130,7 +130,7 @@ def cargar_alarmas():
 # Llamar a cargar_alarmas() al inicio
 cargar_alarmas()  # Cargar alarmas al inicio
 
-@app.route('/crear_alarma', methods=['POST'])
+@app.route('/api/crear_alarma', methods=['POST'])
 def crear_alarma():
     datos = request.json
     hora = datos.get('hora')
@@ -186,7 +186,7 @@ def crear_alarma():
 
     return jsonify({"mensaje": f"Alarma programada para {hora} con repetición '{repeticion}' y guardada en el sistema"}), 201
 
-@app.route('/consultar_alarmas', methods=['GET'])
+@app.route('/api/consultar_alarmas', methods=['GET'])
 def consultar_alarmas():
     conn = sqlite3.connect('alarmas.db')
     cursor = conn.cursor()
@@ -233,7 +233,7 @@ def consultar_alarmas():
     conn.close()
     return jsonify({"alarmas_programadas": resultado}), 200
 
-@app.route('/eliminar_alarma/<int:alarma_id>', methods=['DELETE'])
+@app.route('/api/eliminar_alarma/<int:alarma_id>', methods=['DELETE'])
 def eliminar_alarma(alarma_id):
     conn = sqlite3.connect('alarmas.db')
     cursor = conn.cursor()
@@ -258,7 +258,7 @@ def eliminar_alarma(alarma_id):
 
     return jsonify({"mensaje": f"Alarma con ID {alarma_id} eliminada correctamente"}), 200
 
-@app.route('/editar_alarma/<int:alarma_id>', methods=['PUT'])
+@app.route('/api/editar_alarma/<int:alarma_id>', methods=['PUT'])
 def editar_alarma(alarma_id):
     datos = request.json
     nueva_hora = datos.get('hora')
@@ -323,7 +323,7 @@ def allowed_audio(filename):
     return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
 
 # Cambia la ruta de guardado de audios al subir
-@app.route('/audios', methods=['POST'])
+@app.route('/api/audios', methods=['POST'])
 def subir_audio():
     try:
         if 'file' not in request.files:
@@ -349,7 +349,7 @@ def subir_audio():
         return jsonify({'error': f'Error interno: {str(e)}'}), 500
 
 # Cambia la función listar_audios para leer desde la ruta orangeClock
-@app.route('/audios', methods=['GET'])
+@app.route('/api/audios', methods=['GET'])
 def listar_audios():
     sistema = platform.system().lower()
     if sistema == "windows":
@@ -368,7 +368,7 @@ def listar_audios():
     return jsonify(archivos)
 
 # Servir archivos de audio estaticamente
-@app.route('/audios/<path:filename>')
+@app.route('/api/audios/<path:filename>')
 def servir_audio(filename):
     sistema = platform.system().lower()
     if sistema == "windows":
@@ -378,7 +378,7 @@ def servir_audio(filename):
     return send_from_directory(carpeta_audios, filename)
 
 # Cambia eliminar y renombrar audio para usar la ruta orangeClock
-@app.route('/audios/<nombre>', methods=['DELETE'])
+@app.route('/api/audios/<nombre>', methods=['DELETE'])
 def eliminar_audio(nombre):
     import platform
     sistema = platform.system().lower()
@@ -393,7 +393,7 @@ def eliminar_audio(nombre):
         return jsonify({'mensaje': 'Audio eliminado'}), 200
     return jsonify({'error': 'Audio no encontrado'}), 404
 
-@app.route('/audios/<nombre>', methods=['PUT'])
+@app.route('/api/audios/<nombre>', methods=['PUT'])
 def renombrar_audio(nombre):
     import platform
     sistema = platform.system().lower()
@@ -416,7 +416,7 @@ def renombrar_audio(nombre):
     os.rename(old_path, new_path)
     return jsonify({'mensaje': 'Audio renombrado', 'ruta': f'/audios/{nuevo_nombre_completo}'}), 200
 
-@app.route('/alarmas_proximas', methods=['GET'])
+@app.route('/api/alarmas_proximas', methods=['GET'])
 def alarmas_proximas():
     conn = sqlite3.connect('alarmas.db')
     cursor = conn.cursor()

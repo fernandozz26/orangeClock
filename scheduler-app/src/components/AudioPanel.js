@@ -14,7 +14,7 @@ const AudioPanel = () => {
 
   const fetchAudios = async () => {
     try {
-      const res = await axios.get("/audios");
+      const res = await axios.get("/api/audios");
       setAudios(res.data);
     } catch {
       setAudios([]);
@@ -31,7 +31,7 @@ const AudioPanel = () => {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      await axios.post("/audios", formData);
+      await axios.post("/api/audios", formData);
       setMensaje("Audio subido correctamente");
       setFile(null);
       fetchAudios();
@@ -47,7 +47,7 @@ const AudioPanel = () => {
   const handleDelete = async (ruta) => {
     const nombre = ruta.split("/").pop();
     try {
-      await axios.delete(`/audios/${nombre}`);
+      await axios.delete(`/api/audios/${nombre}`);
       setMensaje("Audio eliminado");
       fetchAudios();
     } catch {
@@ -67,7 +67,7 @@ const AudioPanel = () => {
       return;
     }
     try {
-      await axios.put(`/audios/${nombre}`, { nuevo_nombre: baseName });
+      await axios.put(`/api/audios/${nombre}`, { nuevo_nombre: baseName });
       setMensaje("Audio renombrado");
       setNuevoNombre("");
       setEditandoNombre("");
@@ -165,7 +165,7 @@ const AudioPanel = () => {
                 {/* Renderiza un solo control de audio si este audio está siendo previsualizado */}
                 {audioPreview === a.ruta && (
                   <audio controls autoPlay className="w-100 mb-2" onEnded={() => setAudioPreview("")}>
-                    <source src={`http://localhost:5000/audios/${a.ruta}`} />
+                    <source src={`/api/audios/${a.ruta}`} />
                     Tu navegador no soporta el elemento de audio.
                   </audio>
                 )}
