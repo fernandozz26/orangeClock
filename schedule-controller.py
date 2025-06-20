@@ -45,6 +45,7 @@ inicializar_db()  # Se ejecuta al inicio del script
 
 # Cambia la ruta base de audios a la raíz orangeClock
 def reproducir_audio(audio_path):
+    import subprocess
     sistema = platform.system().lower()
     if sistema == "windows":
         base_audio = "c:\\orangeClock\\audios"
@@ -58,11 +59,23 @@ def reproducir_audio(audio_path):
         print(f"[CRON] ERROR: El archivo no existe: {ruta_final}")
         return
     try:
-        pygame.mixer.init()
-        pygame.mixer.music.load(ruta_final)
-        pygame.mixer.music.play()
-        print(f"[CRON] Reproduciendo audio: {ruta_final}")
-        time.sleep(10)  # Esperar para que se reproduzca el audio
+        if sistema == "windows":
+            import pygame
+            pygame.mixer.init()
+            pygame.mixer.music.load(ruta_final)
+            pygame.mixer.music.play()
+            print(f"[CRON] Reproduciendo audio (pygame): {ruta_final}")
+            time.sleep(10)
+        else:
+            ext = os.path.splitext(ruta_final)[1].lower()
+            if ext == ".mp3":
+                print(f"[CRON] Reproduciendo audio (mpg123): {ruta_final}")
+                subprocess.run(["mpg123", ruta_final], check=True)
+            elif ext == ".wav":
+                print(f"[CRON] Reproduciendo audio (aplay): {ruta_final}")
+                subprocess.run(["aplay", ruta_final], check=True)
+            else:
+                print(f"[CRON] Formato no soportado: {ext}")
     except Exception as e:
         print(f"[CRON] Error al reproducir audio: {e}")
 
