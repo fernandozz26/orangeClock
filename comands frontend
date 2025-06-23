@@ -13,13 +13,26 @@ sudo chown -R caddy:caddy /home/orangepi/clock_frontend/build
 3. Configurar Caddyfile
 sudo nano /etc/caddy/Caddyfile
 
+
 :80 {
     root * /home/orangepi/clock_frontend/build
-    file_server {
-        hide .git
+
+    handle /api/* {
+        reverse_proxy 127.0.0.1:5000
     }
-    try_files {path} /index.html
+
+    handle /favicon.ico {
+        file_server
+    }
+
+    handle {
+        try_files {path} /index.html
+        file_server {
+            hide .git
+        }
+    }
 }
+
 
 4. Reiniciar Caddy
 

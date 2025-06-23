@@ -7,10 +7,19 @@ echo "Instalando python3-tk..."
 sudo apt-get update
 sudo apt-get install -y python3-tk mpg123 alsa-utils
 
+# Verificar y crear entorno virtual si no existe
+echo "Verificando entorno virtual..."
+if [ ! -d "/home/orangepi/clock_api_env" ]; then
+    echo "Creando entorno virtual..."
+    python3 -m venv /home/orangepi/clock_api_env
+else
+    echo "Entorno virtual ya existe"
+fi
+
 # Activar entorno virtual e instalar dependencias
-echo "Activando entorno virtual..."
+echo "Activando entorno virtual e instalando paquetes..."
 source /home/orangepi/clock_api_env/bin/activate
-pip install tkinter-dev 2>/dev/null || echo "tkinter ya disponible"
+pip install flask flask-cors apscheduler pygame waitress
 
 # Actualizar archivo de servicio
 echo "Actualizando archivo de servicio..."
@@ -40,9 +49,10 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-# Recargar y reiniciar servicio
-echo "Recargando servicio..."
+# Habilitar y reiniciar servicio
+echo "Configurando servicio..."
 sudo systemctl daemon-reload
+sudo systemctl enable clock_api.service
 sudo systemctl restart clock_api.service
 
 echo "Estado del servicio:"

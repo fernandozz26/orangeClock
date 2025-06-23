@@ -87,20 +87,61 @@ def inicializar_sistema():
 
 # Cambia la ruta base de audios a la raíz orangeClock
 def mostrar_mensaje_flotante(titulo, mensaje, tipo="info"):
-    """Muestra un mensaje flotante en pantalla"""
+    """Muestra un mensaje flotante en pantalla que se cierra automáticamente"""
     def crear_ventana():
         try:
             root = tk.Tk()
-            root.withdraw()  # Ocultar ventana principal
+            root.title(titulo)
+            root.geometry("400x150")
+            root.resizable(False, False)
             
+            # Centrar ventana
+            root.eval('tk::PlaceWindow . center')
+            
+            # Configurar color según tipo
             if tipo == "error":
-                messagebox.showerror(titulo, mensaje)
+                bg_color = "#ffebee"
+                fg_color = "#c62828"
             elif tipo == "warning":
-                messagebox.showwarning(titulo, mensaje)
+                bg_color = "#fff3e0"
+                fg_color = "#ef6c00"
             else:
-                messagebox.showinfo(titulo, mensaje)
+                bg_color = "#e8f5e8"
+                fg_color = "#2e7d32"
             
-            root.destroy()
+            root.configure(bg=bg_color)
+            
+            # Etiqueta del título
+            titulo_label = tk.Label(root, text=titulo, font=("Arial", 12, "bold"), 
+                                  bg=bg_color, fg=fg_color)
+            titulo_label.pack(pady=10)
+            
+            # Etiqueta del mensaje
+            mensaje_label = tk.Label(root, text=mensaje, font=("Arial", 10), 
+                                   bg=bg_color, fg="black", wraplength=350)
+            mensaje_label.pack(pady=5)
+            
+            # Contador regresivo
+            contador_label = tk.Label(root, text="Se cerrará en 10 segundos", 
+                                    font=("Arial", 8), bg=bg_color, fg="gray")
+            contador_label.pack(pady=5)
+            
+            # Función para actualizar contador
+            def actualizar_contador(segundos):
+                if segundos > 0:
+                    contador_label.config(text=f"Se cerrará en {segundos} segundos")
+                    root.after(1000, actualizar_contador, segundos - 1)
+                else:
+                    root.destroy()
+            
+            # Iniciar contador
+            actualizar_contador(10)
+            
+            # Permitir cerrar manualmente
+            root.protocol("WM_DELETE_WINDOW", root.destroy)
+            
+            root.mainloop()
+            
         except Exception as e:
             print(f"[GUI] Error al mostrar mensaje flotante: {e}")
     
