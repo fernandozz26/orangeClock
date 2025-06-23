@@ -9,18 +9,25 @@ pip install flask flask-cors apscheduler pygame waitress
 ✔ Archivo de Servicio
 
 [Unit]
-Description=My Flask REST API
-After=network.target
+Description=Orange Clock Alarm System
+After=network.target sound.target
+Wants=network.target
 
 [Service]
 Type=simple
-User=orangepi  # Usar el usuario correcto (ver con `whoami`)
+User=orangepi
 Group=orangepi
 WorkingDirectory=/home/orangepi/clock_api
 ExecStart=/home/orangepi/clock_api_env/bin/python3 /home/orangepi/clock_api/schedule-controller.py
 Restart=always
-RestartSec=3s
+RestartSec=5
 Environment="PATH=/home/orangepi/clock_api_env/bin:/usr/bin"
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/orangepi/.Xauthority
+Environment=PULSE_RUNTIME_PATH=/run/user/1000/pulse
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target

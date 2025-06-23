@@ -1,0 +1,27 @@
+[Unit]
+Description=Orange Clock Alarm System
+After=network.target sound.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/orangeClock
+Environment=PYTHONPATH=/orangeClock
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/python3 /orangeClock/schedule-controller.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Configuración de audio y GUI
+Environment=PULSE_RUNTIME_PATH=/run/user/1000/pulse
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=QT_X11_NO_MITSHM=1
+
+[Install]
+WantedBy=multi-user.target

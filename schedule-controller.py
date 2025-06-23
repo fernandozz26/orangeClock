@@ -9,14 +9,22 @@ from werkzeug.utils import secure_filename
 import platform
 from datetime import datetime, timedelta
 from waitress import serve
+import tkinter as tk
+from tkinter import messagebox
+import threading
 
 # Variables globales
-pygame.init()
 app = Flask(__name__)
 CORS(app) # Habilitar CORS para todas las rutas
 #CORS(app, origins=["http://localhost:3000"])
 scheduler = BackgroundScheduler()
-scheduler.start()
+
+# Inicializar pygame de forma segura
+try:
+    pygame.init()
+    pygame.mixer.init()
+except Exception as e:
+    print(f"[INIT] Advertencia: Error al inicializar pygame: {e}")
 
 # Iniciar base de datos
 # Agrega el campo fecha a la tabla si no existe
@@ -41,78 +49,217 @@ def inicializar_db():
     conn.commit()
     conn.close()
 
-inicializar_db()  # Se ejecuta al inicio del script
-
-# Cambia la ruta base de audios a la raíz orangeClock
-def reproducir_audio(audio_path):
-    import subprocess
+def inicializar_sistema():
+    """Inicializa todo el sistema de forma ordenada"""
+    print("[INIT] Iniciando sistema de alarmas...")
+    
+    # 1. Inicializar base de datos
+    inicializar_db()
+    
+    # 2. Crear directorio de audios si no existe
     sistema = platform.system().lower()
     if sistema == "windows":
         base_audio = "c:\\orangeClock\\audios"
     else:
         base_audio = "/orangeClock/audios"
-    print(f"[CRON] Intentando reproducir: {audio_path}")
+    
+    if not os.path.exists(base_audio):
+        os.makedirs(base_audio, exist_ok=True)
+        print(f"[INIT] Directorio de audios creado: {base_audio}")
+    
+    # 3. Iniciar scheduler
+    if not scheduler.running:
+        scheduler.start()
+        print("[INIT] Scheduler iniciado")
+    
+    # 4. Cargar alarmas con un pequeño delay para asegurar que todo esté listo
+    import threading
+    import time
+    def cargar_con_delay():
+        time.sleep(2)  # Esperar 2 segundos
+        cargar_alarmas()
+    
+    thread = threading.Thread(target=cargar_con_delay)
+    thread.daemon = True
+    thread.start()
+    
+    print("[INIT] Sistema inicializado correctamente")
+
+# Cambia la ruta base de audios a la raíz orangeClock
+def mostrar_mensaje_flotante(titulo, mensaje, tipo="info"):
+    """Muestra un mensaje flotante en pantalla"""
+    def crear_ventana():
+        try:
+            root = tk.Tk()
+            root.withdraw()  # Ocultar ventana principal
+            
+            if tipo == "error":
+                messagebox.showerror(titulo, mensaje)
+            elif tipo == "warning":
+                messagebox.showwarning(titulo, mensaje)
+            else:
+                messagebox.showinfo(titulo, mensaje)
+            
+            root.destroy()
+        except Exception as e:
+            print(f"[GUI] Error al mostrar mensaje flotante: {e}")
+    
+    # Ejecutar en hilo separado para no bloquear
+    thread = threading.Thread(target=crear_ventana)
+    thread.daemon = True
+    thread.start()
+
+def reproducir_audio(audio_path):
+    import subprocess
+    import shutil
+    
+    sistema = platform.system().lower()
+    if sistema == "windows":
+        base_audio = "c:\\orangeClock\\audios"
+    else:
+        base_audio = "/orangeClock/audios"
+    
+    print(f"[CRON] === INICIANDO REPRODUCCIÓN ===")
+    print(f"[CRON] Audio solicitado: {audio_path}")
+    
     nombre_archivo = os.path.basename(audio_path)
     ruta_final = os.path.join(base_audio, nombre_archivo)
-    print(f"[CRON] Ruta absoluta utilizada: {ruta_final}")
+    print(f"[CRON] Ruta final: {ruta_final}")
+    
     if not os.path.exists(ruta_final):
-        print(f"[CRON] ERROR: El archivo no existe: {ruta_final}")
-        return
+        error_msg = f"Archivo de audio no encontrado: {nombre_archivo}"
+        print(f"[CRON] ERROR: Archivo no encontrado: {ruta_final}")
+        if os.path.exists(base_audio):
+            archivos = os.listdir(base_audio)
+            print(f"[CRON] Archivos disponibles: {archivos}")
+        mostrar_mensaje_flotante("Error de Alarma", f"No se pudo reproducir el audio: {nombre_archivo}\nMotivo: {error_msg}", "error")
+        return False
+    
     try:
         if sistema == "windows":
-            import pygame
-            pygame.mixer.init()
+            if not pygame.mixer.get_init():
+                pygame.mixer.init()
             pygame.mixer.music.load(ruta_final)
             pygame.mixer.music.play()
-            print(f"[CRON] Reproduciendo audio (pygame): {ruta_final}")
+            print(f"[CRON] ✓ Reproduciendo: {nombre_archivo}")
+            mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
             time.sleep(10)
+            return True
         else:
             ext = os.path.splitext(ruta_final)[1].lower()
-            if ext == ".mp3":
-                print(f"[CRON] Reproduciendo audio (mpg123): {ruta_final}")
-                subprocess.run(["mpg123", ruta_final], check=True)
-            elif ext == ".wav":
-                print(f"[CRON] Reproduciendo audio (aplay): {ruta_final}")
-                subprocess.run(["aplay", ruta_final], check=True)
-            else:
-                print(f"[CRON] Formato no soportado: {ext}")
+            
+            if ext == ".mp3" and shutil.which("mpg123"):
+                result = subprocess.run(["mpg123", "-q", ruta_final], capture_output=True, timeout=30)
+                if result.returncode == 0:
+                    print(f"[CRON] ✓ Reproducido con mpg123: {nombre_archivo}")
+                    mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
+                    return True
+            
+            if ext == ".wav" and shutil.which("aplay"):
+                result = subprocess.run(["aplay", "-q", ruta_final], capture_output=True, timeout=30)
+                if result.returncode == 0:
+                    print(f"[CRON] ✓ Reproducido con aplay: {nombre_archivo}")
+                    mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
+                    return True
+            
+            if shutil.which("paplay"):
+                result = subprocess.run(["paplay", ruta_final], capture_output=True, timeout=30)
+                if result.returncode == 0:
+                    print(f"[CRON] ✓ Reproducido con paplay: {nombre_archivo}")
+                    mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
+                    return True
+            
+            error_msg = f"No se encontraron reproductores de audio disponibles"
+            print(f"[CRON] ERROR: No se pudo reproducir {nombre_archivo}")
+            mostrar_mensaje_flotante("Error de Alarma", f"No se pudo reproducir el audio: {nombre_archivo}\nMotivo: {error_msg}", "error")
+            return False
+            
     except Exception as e:
-        print(f"[CRON] Error al reproducir audio: {e}")
+        error_msg = f"Error técnico: {str(e)}"
+        print(f"[CRON] ERROR al reproducir audio: {e}")
+        mostrar_mensaje_flotante("Error de Alarma", f"No se pudo reproducir el audio: {nombre_archivo}\nMotivo: {error_msg}", "error")
+        return False
 
 def cargar_alarmas():
+    print("[INIT] Iniciando carga de alarmas...")
+    
+    # Verificar que el scheduler esté disponible
+    if not scheduler.running:
+        print("[INIT] Iniciando scheduler...")
+        scheduler.start()
+    
     # 1. Limpiar todos los jobs existentes
-    for job in scheduler.get_jobs():
-        scheduler.remove_job(job.id)
+    try:
+        for job in scheduler.get_jobs():
+            scheduler.remove_job(job.id)
+        print(f"[INIT] Jobs limpiados: {len(scheduler.get_jobs())}")
+    except Exception as e:
+        print(f"[INIT] Error al limpiar jobs: {e}")
 
+    # 2. Verificar que la base de datos existe
+    if not os.path.exists('alarmas.db'):
+        print("[INIT] Base de datos no encontrada, inicializando...")
+        inicializar_db()
+    
     conn = sqlite3.connect('alarmas.db')
     cursor = conn.cursor()
     try:
         cursor.execute("SELECT id, hora, audio, repeticion, fecha FROM alarmas")
         alarmas = cursor.fetchall()
-    except Exception:
+    except Exception as e:
+        print(f"[INIT] Error al leer columna fecha, usando formato anterior: {e}")
         cursor.execute("SELECT id, hora, audio, repeticion FROM alarmas")
         alarmas = [(id, hora, audio, repeticion, None) for id, hora, audio, repeticion in cursor.fetchall()]
     conn.close()
 
+    print(f"[INIT] Encontradas {len(alarmas)} alarmas en la base de datos")
+    
+    # 3. Verificar directorio de audios
+    sistema = platform.system().lower()
+    if sistema == "windows":
+        base_audio = "c:\\orangeClock\\audios"
+    else:
+        base_audio = "/orangeClock/audios"
+    
+    if not os.path.exists(base_audio):
+        print(f"[INIT] Creando directorio de audios: {base_audio}")
+        os.makedirs(base_audio, exist_ok=True)
+
+    alarmas_cargadas = 0
     for id, hora, audio, repeticion, fecha in alarmas:
+        # Verificar que el archivo de audio existe
+        nombre_archivo = os.path.basename(audio)
+        ruta_audio = os.path.join(base_audio, nombre_archivo)
+        if not os.path.exists(ruta_audio):
+            print(f"[INIT] ADVERTENCIA: Audio no encontrado para alarma {id}: {ruta_audio}")
+            continue
+            
         def ejecutar_alarma(audio_path=audio):
             reproducir_audio(audio_path)
+            
         try:
             if fecha and fecha != 'None':
                 # Alarma de única vez
                 from datetime import datetime
                 run_date = f"{fecha} {hora}"
-                scheduler.add_job(
-                    ejecutar_alarma,
-                    'date',
-                    run_date=datetime.strptime(run_date, "%Y-%m-%d %H:%M"),
-                    id=str(id)
-                )
+                fecha_alarma = datetime.strptime(run_date, "%Y-%m-%d %H:%M")
+                # Solo programar si la fecha es futura
+                if fecha_alarma > datetime.now():
+                    scheduler.add_job(
+                        ejecutar_alarma,
+                        'date',
+                        run_date=fecha_alarma,
+                        id=str(id)
+                    )
+                    alarmas_cargadas += 1
+                    print(f"[INIT] Alarma única programada: {id} - {fecha} {hora}")
+                else:
+                    print(f"[INIT] Alarma única pasada, no programada: {id} - {fecha} {hora}")
             elif repeticion and repeticion != 'None':
                 # Alarmas recurrentes
                 cron_kwargs = {
-                    'hour': hora.split(':')[0],
-                    'minute': hora.split(':')[1],
+                    'hour': int(hora.split(':')[0]),
+                    'minute': int(hora.split(':')[1]),
                     'id': str(id)
                 }
                 # Semanal (ej: mon, tue-wed)
@@ -122,26 +269,33 @@ def cargar_alarmas():
                 # Anual (MM-DD)
                 elif len(repeticion) == 5 and repeticion[2] == '-':
                     mes, dia = repeticion.split('-')
-                    cron_kwargs['month'] = mes
-                    cron_kwargs['day'] = dia
+                    cron_kwargs['month'] = int(mes)
+                    cron_kwargs['day'] = int(dia)
                 # Mensual (día del mes)
                 elif repeticion.isdigit():
-                    cron_kwargs['day'] = repeticion
+                    cron_kwargs['day'] = int(repeticion)
                 scheduler.add_job(ejecutar_alarma, 'cron', **cron_kwargs)
+                alarmas_cargadas += 1
+                print(f"[INIT] Alarma recurrente programada: {id} - {hora} ({repeticion})")
             else:
                 # Alarma diaria
                 scheduler.add_job(
                     ejecutar_alarma,
                     'cron',
-                    hour=hora.split(':')[0],
-                    minute=hora.split(':')[1],
+                    hour=int(hora.split(':')[0]),
+                    minute=int(hora.split(':')[1]),
                     id=str(id)
                 )
+                alarmas_cargadas += 1
+                print(f"[INIT] Alarma diaria programada: {id} - {hora}")
         except Exception as e:
-            print(f"[CRON] Error al cargar la alarma id={id}, hora={hora}, audio={audio}, rep={repeticion}, fecha={fecha}: {e}")
+            print(f"[INIT] ERROR al cargar alarma id={id}, hora={hora}, audio={audio}, rep={repeticion}, fecha={fecha}: {e}")
+    
+    print(f"[INIT] Carga completada: {alarmas_cargadas}/{len(alarmas)} alarmas programadas")
+    print(f"[INIT] Jobs activos en scheduler: {len(scheduler.get_jobs())}")
 
-# Llamar a cargar_alarmas() al inicio
-cargar_alarmas()  # Cargar alarmas al inicio
+# Inicializar sistema completo
+inicializar_sistema()
 
 @app.route('/api/crear_alarma', methods=['POST'])
 def crear_alarma():
