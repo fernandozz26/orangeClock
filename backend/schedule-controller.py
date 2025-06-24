@@ -190,21 +190,21 @@ def reproducir_audio(audio_path):
             ext = os.path.splitext(ruta_final)[1].lower()
             
             if ext == ".mp3" and shutil.which("mpg123"):
-                result = subprocess.run(["mpg123", "-q", ruta_final], capture_output=True, timeout=30)
+                result = subprocess.run(["mpg123", "-q", ruta_final], capture_output=True)
                 if result.returncode == 0:
                     print(f"[CRON] ✓ Reproducido con mpg123: {nombre_archivo}")
                     mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
                     return True
             
             if ext == ".wav" and shutil.which("aplay"):
-                result = subprocess.run(["aplay", "-q", ruta_final], capture_output=True, timeout=30)
+                result = subprocess.run(["aplay", "-q", ruta_final], capture_output=True)
                 if result.returncode == 0:
                     print(f"[CRON] ✓ Reproducido con aplay: {nombre_archivo}")
                     mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
                     return True
             
             if shutil.which("paplay"):
-                result = subprocess.run(["paplay", ruta_final], capture_output=True, timeout=30)
+                result = subprocess.run(["paplay", ruta_final], capture_output=True)
                 if result.returncode == 0:
                     print(f"[CRON] ✓ Reproducido con paplay: {nombre_archivo}")
                     mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
