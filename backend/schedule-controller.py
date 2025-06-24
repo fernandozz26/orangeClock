@@ -705,6 +705,9 @@ def alarmas_proximas():
                 dt_alarma += timedelta(days=1)
             if ahora <= dt_alarma <= dentro_24h:
                 resultado.append({"id": id, "hora": hora, "audio": audio, "repeticion": None, "fecha": None})
+    
+    # Ordenar por hora
+    resultado.sort(key=lambda x: x['hora'])
     return jsonify({"alarmas_proximas": resultado}), 200
 
 # iniciar api Flask tiene que ir al final del script
