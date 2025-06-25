@@ -384,7 +384,7 @@ def crear_alarma():
     def ejecutar_alarma():
         reproducir_audio(audio)
 
-    if fecha:  # Alarma de única vez
+    if fecha and fecha != 'None':  # Alarma de única vez
         from datetime import datetime
         run_date = f"{fecha} {hora}"
         scheduler.add_job(
@@ -392,21 +392,34 @@ def crear_alarma():
             'date',
             run_date=datetime.strptime(run_date, "%Y-%m-%d %H:%M")
         )
-    elif repeticion:
-        scheduler.add_job(
-            ejecutar_alarma, 
-            'cron', 
-            hour=hora.split(':')[0], 
-            minute=hora.split(':')[1], 
-            day_of_week=repeticion if repeticion.isalpha() else None, 
-            month=repeticion if repeticion.isdigit() else None
-        )
+    elif repeticion and repeticion != 'None':
+        # Alarmas recurrentes
+        cron_kwargs = {
+            'hour': int(hora.split(':')[0]),
+            'minute': int(hora.split(':')[1])
+        }
+        
+        # Semanal (ej: mon, tue-wed)
+        dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
+        if all(d in dias_semana for d in repeticion.split('-')):
+            cron_kwargs['day_of_week'] = repeticion
+        # Anual (MM-DD)
+        elif len(repeticion) == 5 and repeticion[2] == '-':
+            mes, dia = repeticion.split('-')
+            cron_kwargs['month'] = int(mes)
+            cron_kwargs['day'] = int(dia)
+        # Mensual (día del mes)
+        elif repeticion.isdigit():
+            cron_kwargs['day'] = int(repeticion)
+        
+        scheduler.add_job(ejecutar_alarma, 'cron', **cron_kwargs)
     else:
+        # Alarma diaria
         scheduler.add_job(
             ejecutar_alarma, 
             'cron', 
-            hour=hora.split(':')[0], 
-            minute=hora.split(':')[1]
+            hour=int(hora.split(':')[0]), 
+            minute=int(hora.split(':')[1])
         )
 
     return jsonify({"mensaje": f"Alarma programada para {hora} con repetición '{repeticion}' y guardada en el sistema"}), 201

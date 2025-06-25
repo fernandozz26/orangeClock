@@ -12,6 +12,7 @@ fi
 echo "Copiando archivo de servicio..."
 cp orangeclock.service /etc/systemd/system/
 
+#sudo nano /etc/systemd/system/orangeclock.service
 # Recargar systemd
 echo "Recargando systemd..."
 systemctl daemon-reload

@@ -5,14 +5,15 @@ Wants=network.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/orangeClock
-Environment=PYTHONPATH=/orangeClock
+User=orangepi
+Group=orangepi
+WorkingDirectory=/home/orangepi/clock_api
+Environment="PATH=/home/orangepi/clock_api_env/bin:/usr/bin"
 Environment=DISPLAY=:0
-Environment=XAUTHORITY=/home/pi/.Xauthority
+Environment=XAUTHORITY=/home/orangepi/.Xauthority
+Environment=XDG_SESSION_TYPE=x11
 ExecStartPre=/bin/sleep 10
-ExecStart=/usr/bin/python3 /orangeClock/schedule-controller.py
+ExecStart=/home/orangepi/clock_api_env/bin/python3 /home/orangepi/clock_api/schedule-controller.py
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -22,6 +23,7 @@ StandardError=journal
 Environment=PULSE_RUNTIME_PATH=/run/user/1000/pulse
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=QT_X11_NO_MITSHM=1
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 [Install]
 WantedBy=multi-user.target
