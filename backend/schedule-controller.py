@@ -12,6 +12,18 @@ from waitress import serve
 import tkinter as tk
 from tkinter import messagebox
 import threading
+import logging
+import sys
+
+# Configurar logging para systemd
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
 
 # Variables globales
 app = Flask(__name__)
@@ -51,7 +63,8 @@ def inicializar_db():
 
 def inicializar_sistema():
     """Inicializa todo el sistema de forma ordenada"""
-    print("[INIT] Iniciando sistema de alarmas...")
+    print("[INIT] Iniciando sistema de alarmas...", flush=True)
+    logger.info("[INIT] Iniciando sistema de alarmas...")
     
     # 1. Inicializar base de datos
     inicializar_db()
@@ -399,12 +412,20 @@ def crear_alarma():
     repeticion = datos.get('repeticion')
     fecha = datos.get('fecha')
     
-    print(f"[API] === CREANDO NUEVA ALARMA ===")
-    print(f"[API] Datos recibidos: {datos}")
-    print(f"[API] Hora: {hora}")
-    print(f"[API] Audio: {audio}")
-    print(f"[API] Repetición: {repeticion}")
-    print(f"[API] Fecha: {fecha}")
+    logger.info(f"[API] === CREANDO NUEVA ALARMA ===")
+    logger.info(f"[API] Datos recibidos: {datos}")
+    logger.info(f"[API] Hora: {hora}")
+    logger.info(f"[API] Audio: {audio}")
+    logger.info(f"[API] Repetición: {repeticion}")
+    logger.info(f"[API] Fecha: {fecha}")
+    
+    # También print para asegurar que aparezca
+    print(f"[API] === CREANDO NUEVA ALARMA ===", flush=True)
+    print(f"[API] Datos recibidos: {datos}", flush=True)
+    print(f"[API] Hora: {hora}", flush=True)
+    print(f"[API] Audio: {audio}", flush=True)
+    print(f"[API] Repetición: {repeticion}", flush=True)
+    print(f"[API] Fecha: {fecha}", flush=True)
 
     # Verificar conflictos de horario considerando repetición
     conn = sqlite3.connect('alarmas.db')
@@ -482,8 +503,11 @@ def crear_alarma():
             minute=int(hora.split(':')[1])
         )
 
-    print(f"[API] Jobs totales en scheduler: {len(scheduler.get_jobs())}")
-    print(f"[API] === ALARMA CREADA EXITOSAMENTE ===")
+    logger.info(f"[API] Jobs totales en scheduler: {len(scheduler.get_jobs())}")
+    logger.info(f"[API] === ALARMA CREADA EXITOSAMENTE ===")
+    
+    print(f"[API] Jobs totales en scheduler: {len(scheduler.get_jobs())}", flush=True)
+    print(f"[API] === ALARMA CREADA EXITOSAMENTE ===", flush=True)
     return jsonify({"mensaje": f"Alarma programada para {hora} con repetición '{repeticion}' y guardada en el sistema"}), 201
 
 @app.route('/api/consultar_alarmas', methods=['GET'])
@@ -809,5 +833,7 @@ def alarmas_proximas():
 
 # iniciar api Flask tiene que ir al final del script
 if __name__ == '__main__':
+    print("[MAIN] Iniciando servidor Flask...", flush=True)
+    logger.info("[MAIN] Iniciando servidor Flask...")
     #app.run(host='0.0.0.0', port=5000)
     serve(app, host='0.0.0.0', port=5000)
