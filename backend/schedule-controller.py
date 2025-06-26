@@ -88,15 +88,31 @@ def inicializar_sistema():
 # Cambia la ruta base de audios a la raíz orangeClock
 def mostrar_mensaje_flotante(titulo, mensaje, tipo="info"):
     """Muestra un mensaje flotante en pantalla que se cierra automáticamente"""
+    # Solo mostrar GUI si hay display disponible
+    if not os.environ.get('DISPLAY'):
+        print(f"[GUI] {tipo.upper()}: {titulo} - {mensaje}")
+        return
+    
     def crear_ventana():
         try:
+            # Verificar que tkinter funcione
             root = tk.Tk()
+            root.withdraw()  # Ocultar temporalmente
+            
+            # Test básico de display
+            root.winfo_screenwidth()
+            
+            # Si llegamos aquí, el display funciona
+            root.deiconify()  # Mostrar ventana
             root.title(titulo)
             root.geometry("400x150")
             root.resizable(False, False)
             
             # Centrar ventana
-            root.eval('tk::PlaceWindow . center')
+            try:
+                root.eval('tk::PlaceWindow . center')
+            except:
+                pass  # Si falla el centrado, continuar
             
             # Configurar color según tipo
             if tipo == "error":
@@ -143,7 +159,8 @@ def mostrar_mensaje_flotante(titulo, mensaje, tipo="info"):
             root.mainloop()
             
         except Exception as e:
-            print(f"[GUI] Error al mostrar mensaje flotante: {e}")
+            print(f"[GUI] {tipo.upper()}: {titulo} - {mensaje}")
+            print(f"[GUI] Display no disponible: {e}")
     
     # Ejecutar en hilo separado para no bloquear
     thread = threading.Thread(target=crear_ventana)
@@ -160,12 +177,16 @@ def reproducir_audio(audio_path):
     else:
         base_audio = "/orangeClock/audios"
     
-    print(f"[CRON] === INICIANDO REPRODUCCIÓN ===")
-    print(f"[CRON] Audio solicitado: {audio_path}")
+    print(f"[AUDIO] === INICIANDO REPRODUCCIÓN ===")
+    print(f"[AUDIO] Sistema: {sistema}")
+    print(f"[AUDIO] Audio solicitado: {audio_path}")
+    print(f"[AUDIO] Directorio base: {base_audio}")
     
     nombre_archivo = os.path.basename(audio_path)
     ruta_final = os.path.join(base_audio, nombre_archivo)
-    print(f"[CRON] Ruta final: {ruta_final}")
+    print(f"[AUDIO] Nombre archivo: {nombre_archivo}")
+    print(f"[AUDIO] Ruta final: {ruta_final}")
+    print(f"[AUDIO] Archivo existe: {os.path.exists(ruta_final)}")
     
     if not os.path.exists(ruta_final):
         error_msg = f"Archivo de audio no encontrado: {nombre_archivo}"
@@ -182,9 +203,12 @@ def reproducir_audio(audio_path):
                 pygame.mixer.init()
             pygame.mixer.music.load(ruta_final)
             pygame.mixer.music.play()
-            print(f"[CRON] ✓ Reproduciendo: {nombre_archivo}")
+            print(f"[AUDIO] ✓ Iniciando pygame para: {nombre_archivo}")
+            print(f"[AUDIO] ✓ Reproduciendo con pygame...")
             mostrar_mensaje_flotante("Alarma Ejecutada", f"Se ha reproducido correctamente el audio: {nombre_archivo}")
+            print(f"[AUDIO] ✓ Mensaje flotante enviado")
             time.sleep(10)
+            print(f"[AUDIO] ✓ Reproducción pygame completada")
             return True
         else:
             ext = os.path.splitext(ruta_final)[1].lower()
@@ -275,8 +299,27 @@ def cargar_alarmas():
             print(f"[INIT] ADVERTENCIA: Audio no encontrado para alarma {id}: {ruta_audio}")
             continue
             
-        def ejecutar_alarma(audio_path=audio):
-            reproducir_audio(audio_path)
+        def ejecutar_alarma(audio_path=audio, alarma_id=id, alarma_hora=hora, alarma_rep=repeticion, alarma_fecha=fecha):
+            print(f"[CRON] ========== EJECUTANDO ALARMA ===========")
+            print(f"[CRON] ID: {alarma_id}")
+            print(f"[CRON] Hora programada: {alarma_hora}")
+            print(f"[CRON] Audio: {audio_path}")
+            print(f"[CRON] Repetición: {alarma_rep}")
+            print(f"[CRON] Fecha: {alarma_fecha}")
+            print(f"[CRON] Timestamp actual: {datetime.now()}")
+            
+            try:
+                resultado = reproducir_audio(audio_path)
+                if resultado:
+                    print(f"[CRON] ✓ Alarma {alarma_id} ejecutada exitosamente")
+                else:
+                    print(f"[CRON] ✗ Alarma {alarma_id} falló en reproducción")
+            except Exception as e:
+                print(f"[CRON] ✗ ERROR CRITICO en alarma {alarma_id}: {e}")
+                import traceback
+                traceback.print_exc()
+            
+            print(f"[CRON] ========== FIN ALARMA {alarma_id} ==========")
             
         try:
             if fecha and fecha != 'None':
@@ -334,6 +377,16 @@ def cargar_alarmas():
     
     print(f"[INIT] Carga completada: {alarmas_cargadas}/{len(alarmas)} alarmas programadas")
     print(f"[INIT] Jobs activos en scheduler: {len(scheduler.get_jobs())}")
+    
+    # Mostrar detalles de todos los jobs activos
+    jobs = scheduler.get_jobs()
+    if jobs:
+        print(f"[INIT] === JOBS ACTIVOS ===")
+        for job in jobs:
+            print(f"[INIT] Job {job.id}: {job.next_run_time} - {job.trigger}")
+        print(f"[INIT] === FIN JOBS ACTIVOS ===")
+    else:
+        print(f"[INIT] ⚠️  NO HAY JOBS ACTIVOS EN EL SCHEDULER")
 
 # Inicializar sistema completo
 inicializar_sistema()
@@ -345,6 +398,13 @@ def crear_alarma():
     audio = datos.get('audio')
     repeticion = datos.get('repeticion')
     fecha = datos.get('fecha')
+    
+    print(f"[API] === CREANDO NUEVA ALARMA ===")
+    print(f"[API] Datos recibidos: {datos}")
+    print(f"[API] Hora: {hora}")
+    print(f"[API] Audio: {audio}")
+    print(f"[API] Repetición: {repeticion}")
+    print(f"[API] Fecha: {fecha}")
 
     # Verificar conflictos de horario considerando repetición
     conn = sqlite3.connect('alarmas.db')
@@ -422,6 +482,8 @@ def crear_alarma():
             minute=int(hora.split(':')[1])
         )
 
+    print(f"[API] Jobs totales en scheduler: {len(scheduler.get_jobs())}")
+    print(f"[API] === ALARMA CREADA EXITOSAMENTE ===")
     return jsonify({"mensaje": f"Alarma programada para {hora} con repetición '{repeticion}' y guardada en el sistema"}), 201
 
 @app.route('/api/consultar_alarmas', methods=['GET'])
@@ -533,22 +595,44 @@ def editar_alarma(alarma_id):
     def ejecutar_alarma():
         reproducir_audio(nuevo_audio)
 
-    if nueva_repeticion:
+    if nueva_fecha and nueva_fecha != 'None':  # Alarma de única vez
+        from datetime import datetime
+        run_date = f"{nueva_fecha} {nueva_hora}"
         scheduler.add_job(
-            ejecutar_alarma, 
-            'cron', 
-            hour=nueva_hora.split(':')[0], 
-            minute=nueva_hora.split(':')[1], 
-            day_of_week=nueva_repeticion if nueva_repeticion.isalpha() else None, 
-            month=nueva_repeticion if nueva_repeticion.isdigit() else None, 
+            ejecutar_alarma,
+            'date',
+            run_date=datetime.strptime(run_date, "%Y-%m-%d %H:%M"),
             id=str(alarma_id)
         )
+    elif nueva_repeticion and nueva_repeticion != 'None':
+        # Alarmas recurrentes
+        cron_kwargs = {
+            'hour': int(nueva_hora.split(':')[0]),
+            'minute': int(nueva_hora.split(':')[1]),
+            'id': str(alarma_id)
+        }
+        
+        # Semanal (ej: mon, tue-wed)
+        dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
+        if all(d in dias_semana for d in nueva_repeticion.split('-')):
+            cron_kwargs['day_of_week'] = nueva_repeticion
+        # Anual (MM-DD)
+        elif len(nueva_repeticion) == 5 and nueva_repeticion[2] == '-':
+            mes, dia = nueva_repeticion.split('-')
+            cron_kwargs['month'] = int(mes)
+            cron_kwargs['day'] = int(dia)
+        # Mensual (día del mes)
+        elif nueva_repeticion.isdigit():
+            cron_kwargs['day'] = int(nueva_repeticion)
+        
+        scheduler.add_job(ejecutar_alarma, 'cron', **cron_kwargs)
     else:
+        # Alarma diaria
         scheduler.add_job(
             ejecutar_alarma, 
             'cron', 
-            hour=nueva_hora.split(':')[0], 
-            minute=nueva_hora.split(':')[1], 
+            hour=int(nueva_hora.split(':')[0]), 
+            minute=int(nueva_hora.split(':')[1]), 
             id=str(alarma_id)
         )
 
