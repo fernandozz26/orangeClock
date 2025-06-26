@@ -362,7 +362,8 @@ def cargar_alarmas():
                 # Semanal (ej: mon, tue-wed)
                 dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
                 if all(d in dias_semana for d in repeticion.split('-')):
-                    cron_kwargs['day_of_week'] = repeticion
+                    # Convertir guiones a comas para APScheduler
+                    cron_kwargs['day_of_week'] = repeticion.replace('-', ',')
                 # Anual (MM-DD)
                 elif len(repeticion) == 5 and repeticion[2] == '-':
                     mes, dia = repeticion.split('-')
@@ -487,7 +488,8 @@ def crear_alarma():
         # Semanal (ej: mon, tue-wed)
         dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
         if all(d in dias_semana for d in repeticion.split('-')):
-            cron_kwargs['day_of_week'] = repeticion
+            # Convertir guiones a comas para APScheduler
+            cron_kwargs['day_of_week'] = repeticion.replace('-', ',')
         # Anual (MM-DD)
         elif len(repeticion) == 5 and repeticion[2] == '-':
             mes, dia = repeticion.split('-')
@@ -643,7 +645,8 @@ def editar_alarma(alarma_id):
         # Semanal (ej: mon, tue-wed)
         dias_semana = ['mon','tue','wed','thu','fri','sat','sun']
         if all(d in dias_semana for d in nueva_repeticion.split('-')):
-            cron_kwargs['day_of_week'] = nueva_repeticion
+            # Convertir guiones a comas para APScheduler
+            cron_kwargs['day_of_week'] = nueva_repeticion.replace('-', ',')
         # Anual (MM-DD)
         elif len(nueva_repeticion) == 5 and nueva_repeticion[2] == '-':
             mes, dia = nueva_repeticion.split('-')
