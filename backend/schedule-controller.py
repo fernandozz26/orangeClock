@@ -463,7 +463,11 @@ def crear_alarma():
 
     # Programar la alarma en apscheduler
     def ejecutar_alarma():
+        logger.info(f"[API-EXEC] ========== EJECUTANDO ALARMA NUEVA ===========")
+        logger.info(f"[API-EXEC] Hora: {hora}, Audio: {audio}, Repetición: {repeticion}")
+        logger.info(f"[API-EXEC] Timestamp: {datetime.now()}")
         reproducir_audio(audio)
+        logger.info(f"[API-EXEC] ========== FIN ALARMA NUEVA ===========")
 
     if fecha and fecha != 'None':  # Alarma de única vez
         from datetime import datetime
