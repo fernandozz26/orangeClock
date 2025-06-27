@@ -313,6 +313,7 @@ def cargar_alarmas():
             continue
             
         def ejecutar_alarma(audio_path=audio, alarma_id=id, alarma_hora=hora, alarma_rep=repeticion, alarma_fecha=fecha):
+            from datetime import datetime
             print(f"[CRON] ========== EJECUTANDO ALARMA ===========")
             print(f"[CRON] ID: {alarma_id}")
             print(f"[CRON] Hora programada: {alarma_hora}")
