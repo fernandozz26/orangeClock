@@ -4,6 +4,21 @@
 
 echo "Antes de continuar se debe tener instalado Node.js 20 y Python 3"
 
+# Preguntar confirmación al usuario (si/no)
+while true; do
+    read -r -p "¿Deseas continuar con la instalación? (si/no): " RESP
+    RESP_LOWER=$(echo "$RESP" | tr '[:upper:]' '[:lower:]')
+    if [ "$RESP_LOWER" = "si" ]; then
+        echo "Continuando con la instalación..."
+        break
+    elif [ "$RESP_LOWER" = "no" ]; then
+        echo "Instalación cancelada por el usuario. Saliendo..."
+        exit 0
+    else
+        echo "Respuesta no válida. Por favor responde 'si' o 'no'."
+    fi
+done
+
 # Variables generales
 # Este script debe ejecutarse con sudo
 if [ "$EUID" -ne 0 ]; then
@@ -83,8 +98,57 @@ for p in "${PYTHON_CANDIDATES[@]}"; do
     fi
 done
 if [ -z "$PYTHON" ]; then
-    echo "ERROR: no se encontró ningún intérprete Python 3 en el sistema. Instala python3." | tee -a "$BACKEND_LOG"
-    exit 1
+    log "No se encontró Python3 en el sistema. Intentando instalar pyenv y una versión local de Python3 para el usuario actual..."
+
+    # Determinar el usuario real cuando se ejecuta con sudo
+    REAL_USER="${SUDO_USER:-$(whoami)}"
+    REAL_HOME="$(eval echo ~${REAL_USER})"
+
+    log "Usuario real: $REAL_USER, home: $REAL_HOME"
+
+    # Instalar dependencias necesarias para compilar Python (si no están)
+    apt-get update
+    install_if_missing "git"
+    install_if_missing "build-essential"
+    install_if_missing "libssl-dev"
+    install_if_missing "zlib1g-dev"
+    install_if_missing "libbz2-dev"
+    install_if_missing "libreadline-dev"
+    install_if_missing "libsqlite3-dev"
+    install_if_missing "llvm"
+    install_if_missing "libncurses5-dev"
+    install_if_missing "libncursesw5-dev"
+    install_if_missing "xz-utils"
+    install_if_missing "tk-dev"
+    install_if_missing "libffi-dev"
+    install_if_missing "liblzma-dev"
+
+    # Clonar pyenv si no existe
+    if [ ! -d "$REAL_HOME/.pyenv" ]; then
+        log "Clonando pyenv en $REAL_HOME/.pyenv"
+        sudo -u "$REAL_USER" -H git clone https://github.com/pyenv/pyenv.git "$REAL_HOME/.pyenv" || { echo "ERROR: fallo al clonar pyenv" | tee -a "$BACKEND_LOG"; exit 1; }
+    else
+        log "pyenv ya presente en $REAL_HOME/.pyenv"
+    fi
+
+    # Instalar una versión de Python (3.11.6) usando pyenv para el usuario real
+    PYTHON_VERSION_TO_INSTALL="3.11.6"
+    log "Instalando Python $PYTHON_VERSION_TO_INSTALL vía pyenv (usuario: $REAL_USER)"
+
+    sudo -u "$REAL_USER" -H bash -lc '
+        export PYENV_ROOT="$HOME/.pyenv"
+        export PATH="$PYENV_ROOT/bin:$PATH"
+        eval "$(pyenv init -)"
+        if pyenv versions --bare | grep -q "^3.11.6$"; then
+            echo "Python 3.11.6 ya instalado"
+        else
+            pyenv install 3.11.6 || { echo "ERROR: fallo al instalar Python 3.11.6" | tee -a "$BACKEND_LOG"; exit 1; }
+        fi
+        pyenv global 3.11.6
+    ' || { echo "ERROR: fallo al configurar pyenv y Python 3.11.6" | tee -a "$BACKEND_LOG"; exit 1; }
+
+    PYTHON="$REAL_HOME/.pyenv/shims/python3"
+    log "Python configurado en: $PYTHON"
 fi
 log "Usando intérprete Python: $PYTHON"
 
