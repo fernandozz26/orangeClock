@@ -26,6 +26,30 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Priorizar node del usuario real (evita que sudo cambie el binario usado)
+REAL_USER="${SUDO_USER:-$(whoami)}"
+if [ "$REAL_USER" != "" ] && [ "$REAL_USER" != "root" ]; then
+    USER_NODE=$(sudo -u "$REAL_USER" -H bash -lc 'command -v node 2>/dev/null || true')
+    if [ -n "$USER_NODE" ]; then
+        USER_NODE_RESOLVED=$(sudo -u "$REAL_USER" -H bash -lc 'readlink -f "$(command -v node)" 2>/dev/null || true')
+        if [ -n "$USER_NODE_RESOLVED" ]; then
+            NODE_DIR=$(dirname "$USER_NODE_RESOLVED")
+            export PATH="$NODE_DIR:$PATH"
+            log "Ajustado PATH para priorizar node de $REAL_USER: $USER_NODE_RESOLVED"
+        else
+            NODE_DIR=$(dirname "$USER_NODE")
+            export PATH="$NODE_DIR:$PATH"
+            log "Ajustado PATH para priorizar node de $REAL_USER: $USER_NODE"
+        fi
+    else
+        log "No se encontró 'node' en el entorno del usuario $REAL_USER"
+    fi
+fi
+
+# Registrar versiones para diagnóstico
+log "node (según usuario $REAL_USER): $(sudo -u "$REAL_USER" -H bash -lc 'node --version 2>/dev/null || echo none')"
+log "node (entorno del script): $(command -v node >/dev/null 2>&1 && node --version || echo none)"
+
 # Rutas basadas en la ubicación del script
 SCRIPT_DIR=$(dirname "$(realpath "$0")")
 PROJECT_ROOT=$(realpath "$SCRIPT_DIR/..")
