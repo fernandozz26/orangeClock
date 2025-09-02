@@ -201,8 +201,8 @@ fi
 if command -v node >/dev/null 2>&1; then
     log "Node detectado: $(node --version 2>/dev/null || echo 'desconocida')"
 else
-    echo "ERROR: Node.js no está instalado. Por favor instala Node.js y vuelve a ejecutar este script." | tee -a "$BACKEND_LOG"
-    exit 1
+    log "ADVERTENCIA: Node.js no está instalado o no está en PATH. Se intentará compilar el frontend; si npm falla el proceso se detendrá." | tee -a "$BACKEND_LOG"
+    # No se aborta aquí: la validación se realizará durante npm install/build y allí se detendrá el script si hay fallo
 fi
 
 # Asegurar npm en una versión moderna (intentar mantener equipo estable)
@@ -364,6 +364,8 @@ else
         echo "npm install completado" | tee -a "$FRONT_BUILD_LOG"
     else
         echo "ERROR: npm install falló. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        echo "Abortando instalación por fallo en npm install." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        exit 1
     fi
 
     echo "=== Ejecutando: npm run build ===" | tee -a "$FRONT_BUILD_LOG"
@@ -371,6 +373,8 @@ else
         echo "npm run build completado" | tee -a "$FRONT_BUILD_LOG"
     else
         echo "ERROR: npm run build falló. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        echo "Abortando instalación por fallo en npm run build." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        exit 1
     fi
 
     # Copiar build si existe
