@@ -202,6 +202,23 @@ if systemctl list-units --full -all | grep -q "clock_frontend.service"; then
     sudo systemctl daemon-reload
 fi
 
+# Asegurar que Caddy esté instalado antes de configurar el Caddyfile
+if ! command -v caddy >/dev/null 2>&1; then
+    log "Caddy no encontrado. Instalando Caddy..."
+    apt-get install -y debian-keyring debian-archive-keyring apt-transport-https ca-certificates gnupg >/dev/null 2>&1 || true
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
+    apt-get update
+    apt-get install -y caddy
+    if command -v caddy >/dev/null 2>&1; then
+        log "Caddy instalado correctamente"
+    else
+        echo "ERROR: Falló la instalación de Caddy" | tee -a "$BACKEND_LOG"
+    fi
+else
+    log "caddy ya está instalado."
+fi
+
 # Actualizar Caddyfile para servir desde /var/www/clock_frontend
 if [ -d "$FRONT_DEST" ]; then
     log "Configurando Caddy para servir $FRONT_DEST"
