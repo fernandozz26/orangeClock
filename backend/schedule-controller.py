@@ -9,8 +9,6 @@ from werkzeug.utils import secure_filename
 import platform
 from datetime import datetime, timedelta
 from waitress import serve
-import tkinter as tk
-from tkinter import messagebox
 import threading
 import logging
 import sys
@@ -103,6 +101,14 @@ def mostrar_mensaje_flotante(titulo, mensaje, tipo="info"):
     """Muestra un mensaje flotante en pantalla que se cierra automáticamente"""
     # Solo mostrar GUI si hay display disponible
     if not os.environ.get('DISPLAY'):
+        print(f"[GUI] {tipo.upper()}: {titulo} - {mensaje}")
+        return
+    # Importar tkinter dinámicamente; si no está disponible, caer a modo 'sin GUI'
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+    except Exception as e:
+        print(f"[GUI] tkinter no disponible o error al importarlo: {e}")
         print(f"[GUI] {tipo.upper()}: {titulo} - {mensaje}")
         return
     
