@@ -75,8 +75,58 @@ install_if_missing "curl"
 install_if_missing "python3"
 install_if_missing "python3-venv"
 install_if_missing "python3-pip"
-install_if_missing "nodejs"
-install_if_missing "npm"
+
+# Forzar instalación de Node.js v12.22.9 y npm 8.5.1
+log "Asegurando Node.js v12.22.9 y npm 8.5.1"
+NODE_VERSION="12.22.9"
+NPM_VERSION="8.5.1"
+
+# Eliminar paquetes previos que puedan interferir
+if dpkg -l | grep -q nodejs || dpkg -l | grep -q npm; then
+    log "Eliminando paquetes nodejs/npm instalados por apt (si existen)"
+    apt-get remove -y nodejs npm || true
+fi
+
+TMPDIR=$(mktemp -d)
+NODE_TARBALL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
+log "Descargando $NODE_TARBALL"
+if curl -fsSL -o "$TMPDIR/node.tar.xz" "$NODE_TARBALL"; then
+    log "Descargado correctamente"
+else
+    echo "ERROR: fallo al descargar Node.js v$NODE_VERSION" | tee -a "$BACKEND_LOG"
+    rm -rf "$TMPDIR"
+    exit 1
+fi
+
+log "Instalando Node.js en /usr/local"
+# Extraer sobre /usr/local, sobrescribiendo binarios
+tar -C /usr/local --strip-components=1 -xJf "$TMPDIR/node.tar.xz" || { echo "ERROR: fallo al extraer Node.js" | tee -a "$BACKEND_LOG"; rm -rf "$TMPDIR"; exit 1; }
+rm -rf "$TMPDIR"
+
+# Forzar que /usr/local/bin esté primero en PATH para este script
+export PATH="/usr/local/bin:$PATH"
+
+# Instalar npm requerido
+if command -v npm >/dev/null 2>&1; then
+    log "Instalando npm@$NPM_VERSION globalmente"
+    npm install -g "npm@${NPM_VERSION}" >>"$BACKEND_LOG" 2>&1 || echo "WARNING: fallo al instalar npm@${NPM_VERSION}" | tee -a "$BACKEND_LOG"
+else
+    echo "ERROR: npm no está disponible tras instalar Node.js" | tee -a "$BACKEND_LOG"
+fi
+
+# Validar versiones exactas
+INST_NODE_VER=$(node --version 2>/dev/null || echo "")
+INST_NPM_VER=$(npm --version 2>/dev/null || echo "")
+log "Node instalado: $INST_NODE_VER, npm instalado: $INST_NPM_VER"
+if [ "$INST_NODE_VER" != "v${NODE_VERSION}" ]; then
+    echo "ERROR: Node.js no es v${NODE_VERSION} (instalado: $INST_NODE_VER)" | tee -a "$BACKEND_LOG"
+fi
+if [ "$INST_NPM_VER" != "${NPM_VERSION}" ]; then
+    echo "ERROR: npm no es ${NPM_VERSION} (instalado: $INST_NPM_VER)" | tee -a "$BACKEND_LOG"
+fi
+
+# Mostrar versiones
+log "Versiones instaladas: $(node --version 2>/dev/null || echo 'node no instalado') $(npm --version 2>/dev/null || echo 'npm no instalado')"
 
 # Configuración del Backend con validaciones y logs
 log "Iniciando configuración del backend (root)..."
@@ -169,28 +219,78 @@ sudo "$BACKEND_DIR/venv/bin/pip" freeze 2>>"$BACKEND_LOG" | tee -a "$BACKEND_LOG
 log "Mostrando últimas líneas del log de backend:"
 tail -n 50 "$BACKEND_LOG" || true
 
-# Configuración del Frontend (OMITIENDO instalación de dependencias Node por ahora)
-log "Configurando frontend: no se instalarán dependencias Node.js en esta ejecución (se omite npm install)"
+# Configuración del Frontend (compilación y despliegue)
+log "Configurando frontend: se intentará compilar el build desde el código fuente"
 clean_service "clock_frontend.service"
 
-FRONT_BUILD_SRC="$FRONT_BUILD_SRC_DEFAULT"
+FRONT_SRC="$PROJECT_ROOT/scheduler-app"
+FRONT_BUILD_SRC="$FRONT_SRC/build"
 FRONT_DEST="/var/www/clock_frontend"
+FRONT_BUILD_LOG="/var/log/clock_frontend_build.log"
 
-# Asegurar directorio de despliegue y permisos
-sudo mkdir -p "$FRONT_DEST"
-sudo rm -rf "$FRONT_DEST"/* || true
+# Preparar log de build
+sudo rm -f "$FRONT_BUILD_LOG" || true
+sudo touch "$FRONT_BUILD_LOG"
+sudo chown $(whoami):$(whoami) "$FRONT_BUILD_LOG"
 
-if [ -d "$FRONT_BUILD_SRC" ]; then
-    log "Copiando build del frontend a $FRONT_DEST"
-    if sudo cp -r "$FRONT_BUILD_SRC"/* "$FRONT_DEST/"; then
-        sudo chown -R caddy:caddy "$FRONT_DEST"
-        sudo chmod -R a+rX "$FRONT_DEST"
-        log "Build del frontend copiado a $FRONT_DEST y permisos asignados a caddy"
-    else
-        echo "ERROR: fallo al copiar build del frontend" | tee -a "$BACKEND_LOG"
-    fi
+# Comprobar que FRONT_SRC existe
+if [ ! -d "$FRONT_SRC" ]; then
+    echo "ERROR: no se encontró el frontend en $FRONT_SRC" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
 else
-    echo "WARNING: No existe build del frontend en $FRONT_BUILD_SRC. Frontend no desplegado." | tee -a "$BACKEND_LOG"
+    # Intentar instalar dependencias y construir
+    log "Usando Node: $(/usr/local/bin/node --version 2>/dev/null || node --version 2>/dev/null || echo 'node no disponible')"
+    log "Usando npm: $(/usr/local/bin/npm --version 2>/dev/null || npm --version 2>/dev/null || echo 'npm no disponible')"
+
+    cd "$FRONT_SRC"
+
+    # Instalar dependencias (npm ci si package-lock existe, sino npm install)
+    if [ -f "package-lock.json" ]; then
+        BUILD_CMD_INSTALL="npm ci --no-audit --no-fund"
+    else
+        BUILD_CMD_INSTALL="npm install --no-audit --no-fund"
+    fi
+
+    echo "=== Iniciando instalación de dependencias del frontend ===" | tee -a "$FRONT_BUILD_LOG"
+    if $BUILD_CMD_INSTALL >>"$FRONT_BUILD_LOG" 2>&1; then
+        echo "Dependencias instaladas correctamente" | tee -a "$FRONT_BUILD_LOG"
+    else
+        echo "ERROR: fallo al instalar dependencias del frontend. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+    fi
+
+    echo "=== Iniciando build del frontend (npm run build) ===" | tee -a "$FRONT_BUILD_LOG"
+    if npm run build >>"$FRONT_BUILD_LOG" 2>&1; then
+        echo "Build frontend completado correctamente" | tee -a "$FRONT_BUILD_LOG"
+    else
+        echo "ERROR: fallo en npm run build. Revisando causas comunes..." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        # Detectar problemas de engine / versión de node
+        if grep -Eiq "Unsupported engine|engine " "$FRONT_BUILD_LOG"; then
+            echo "Fallo probablemente debido a versión de Node/NPM (Unsupported engine)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        fi
+        if grep -Eiq "requires.*node|requires node|requires a Node" "$FRONT_BUILD_LOG"; then
+            echo "Fallo probablemente debido a requerimientos de versión de Node detectados en logs" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        fi
+        if grep -Eiq "ERR! .*node|node.*unsupported|EBADENGINE" "$FRONT_BUILD_LOG"; then
+            echo "Error de engine/versión detectado en npm (EBADENGINE o similar)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        fi
+        # Añadir diagnóstico de versiones instaladas
+        echo "Node instalado: $(node --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        echo "npm instalado: $(npm --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+    fi
+
+    # Si build existe, copiarlo a destino; si no, informar
+    if [ -d "$FRONT_BUILD_SRC" ]; then
+        sudo mkdir -p "$FRONT_DEST"
+        sudo rm -rf "$FRONT_DEST"/* || true
+        if sudo cp -r "$FRONT_BUILD_SRC"/* "$FRONT_DEST/"; then
+            sudo chown -R caddy:caddy "$FRONT_DEST"
+            sudo chmod -R a+rX "$FRONT_DEST"
+            log "Build del frontend copiado a $FRONT_DEST y permisos asignados a caddy"
+        else
+            echo "ERROR: fallo al copiar build del frontend a $FRONT_DEST" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        fi
+    else
+        echo "WARNING: no se encontró build en $FRONT_BUILD_SRC tras intentar compilar. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+    fi
 fi
 
 # Eliminar cualquier servicio systemd del frontend (no lo recreamos ahora)
