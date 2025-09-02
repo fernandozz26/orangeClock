@@ -224,26 +224,55 @@ if [ ! -f "$BACKEND_DIR/schedule-controller.py" ]; then
 fi
 
 log "Creando/validando entorno virtual"
-if [ ! -d "$BACKEND_DIR/venv" ]; then
-    sudo $PYTHON -m venv "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG" || { echo "ERROR: fallo al crear venv" | tee -a "$BACKEND_LOG"; exit 1; }
-    log "Entorno virtual creado"
-else
-    log "Entorno virtual ya existe"
+# Forzar creación del venv con el intérprete Python detectado ($PYTHON)
+if [ -d "$BACKEND_DIR/venv" ]; then
+    log "Entorno virtual ya existe en $BACKEND_DIR/venv. Se recreará para garantizar coherencia."
+    rm -rf "$BACKEND_DIR/venv"
 fi
 
-log "Instalando requirements (si existe)"
+# Crear venv usando el python3 detectado
+if ! $PYTHON -m venv "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG"; then
+    echo "ERROR: fallo al crear el entorno virtual con $PYTHON" | tee -a "$BACKEND_LOG"
+    exit 1
+fi
+
+# Definir rutas del venv
+VENV_PY="$BACKEND_DIR/venv/bin/python"
+VENV_PIP="$BACKEND_DIR/venv/bin/pip"
+
+# Asegurar permisos y propiedad adecuados
+chown -R root:root "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG" || true
+chmod -R u+rwX "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG" || true
+
+# Actualizar pip/setuptools/wheel dentro del venv
+log "Actualizando pip/setuptools/wheel dentro del venv"
+if ! "$VENV_PY" -m pip install --upgrade pip setuptools wheel >>"$BACKEND_LOG" 2>&1; then
+    echo "ERROR: no se pudo actualizar pip/setuptools/wheel en el venv" | tee -a "$BACKEND_LOG"
+    exit 1
+fi
+
+# Instalar requirements dentro del venv si existe requirements.txt
 if [ -f "$BACKEND_DIR/requirements.txt" ]; then
-    sudo "$VENV_PIP" install -r "$BACKEND_DIR/requirements.txt" >>"$BACKEND_LOG" 2>&1 || echo "WARNING: pip install devolvió error, revisar $BACKEND_LOG"
+    log "Instalando dependencias en el venv desde requirements.txt"
+    if ! "$VENV_PIP" install -r "$BACKEND_DIR/requirements.txt" >>"$BACKEND_LOG" 2>&1; then
+        echo "ERROR: fallo al instalar requirements en el venv. Revisa $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+        echo "Salida de pip freeze parcial:" >>"$BACKEND_LOG"
+        "$VENV_PIP" freeze >>"$BACKEND_LOG" 2>&1 || true
+        exit 1
+    fi
 else
-    echo "WARNING: No existe requirements.txt en $BACKEND_DIR" | tee -a "$BACKEND_LOG"
+    log "No se encontró requirements.txt en $BACKEND_DIR; se omite instalación de dependencias" | tee -a "$BACKEND_LOG"
 fi
 
-# Crear/recrear servicio del backend
-if [ -f "/etc/systemd/system/clock_backend.service" ]; then
-    log "Eliminando servicio /etc/systemd/system/clock_backend.service existente"
-    sudo systemctl stop clock_backend.service || true
-    sudo systemctl disable clock_backend.service || true
-    sudo rm -f /etc/systemd/system/clock_backend.service
+# Verificar que Flask (ejemplo) está instalado en el venv para diagnóstico
+if ! "$VENV_PY" -c "import pkgutil,sys
+if pkgutil.find_loader('flask') is None:
+    sys.exit(1)
+" 2>/dev/null; then
+    echo "WARNING: Flask no parece estar instalado dentro del venv. Revisa $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+    echo "Listado pip freeze:" >>"$BACKEND_LOG"
+    "$VENV_PIP" freeze >>"$BACKEND_LOG" 2>&1 || true
+    # No abortamos aquí porque puede que el backend no necesite flask exactamente, solo avisamos
 fi
 
 log "Creando archivo de servicio /etc/systemd/system/clock_backend.service"
@@ -256,7 +285,10 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=$BACKEND_DIR
-ExecStart=$BACKEND_DIR/venv/bin/python3 $BACKEND_DIR/schedule-controller.py
+# Usar el intérprete del virtualenv para garantizar uso de Python3 y dependencias instaladas
+Environment=PATH=$BACKEND_DIR/venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PYTHONUNBUFFERED=1
+ExecStart=$BACKEND_DIR/venv/bin/python $BACKEND_DIR/schedule-controller.py
 Restart=always
 RestartSec=5
 
