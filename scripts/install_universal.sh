@@ -2,6 +2,8 @@
 
 # === Configuración Universal para Orange Clock ===
 
+echo "Antes de continuar se debe tener instalado Node.js 20 y Python 3"
+
 # Variables generales
 # Este script debe ejecutarse con sudo
 if [ "$EUID" -ne 0 ]; then
@@ -219,9 +221,8 @@ sudo "$VENV_PIP" freeze 2>>"$BACKEND_LOG" | tee -a "$BACKEND_LOG"
 log "Mostrando últimas líneas del log de backend:"
 tail -n 50 "$BACKEND_LOG" || true
 
-# Configuración del Frontend (compilación y despliegue)
-log "Configurando frontend: se intentará compilar el build desde el código fuente"
-clean_service "clock_frontend.service"
+# Configuración del Frontend: compilación simple y despliegue
+log "Compilando frontend: npm install && npm run build"
 
 FRONT_SRC="$PROJECT_ROOT/scheduler-app"
 FRONT_BUILD_SRC="$FRONT_SRC/build"
@@ -233,60 +234,26 @@ sudo rm -f "$FRONT_BUILD_LOG" || true
 sudo touch "$FRONT_BUILD_LOG"
 sudo chown $(whoami):$(whoami) "$FRONT_BUILD_LOG"
 
-# Comprobar que FRONT_SRC existe
 if [ ! -d "$FRONT_SRC" ]; then
     echo "ERROR: no se encontró el frontend en $FRONT_SRC" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
 else
-    # Intentar instalar dependencias y construir
-    log "Usando Node: $(/usr/local/bin/node --version 2>/dev/null || node --version 2>/dev/null || echo 'node no disponible')"
-    log "Usando npm: $(/usr/local/bin/npm --version 2>/dev/null || npm --version 2>/dev/null || echo 'npm no disponible')"
-
     cd "$FRONT_SRC"
 
-    # Instalar dependencias (npm ci si package-lock existe, sino npm install)
-    if [ -f "package-lock.json" ]; then
-        BUILD_CMD_INSTALL="npm ci --no-audit --no-fund"
+    echo "=== Ejecutando: npm install ===" | tee -a "$FRONT_BUILD_LOG"
+    if npm install --no-audit --no-fund >>"$FRONT_BUILD_LOG" 2>&1; then
+        echo "npm install completado" | tee -a "$FRONT_BUILD_LOG"
     else
-        BUILD_CMD_INSTALL="npm install --no-audit --no-fund"
+        echo "ERROR: npm install falló. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
     fi
 
-    echo "=== Iniciando instalación de dependencias del frontend ===" | tee -a "$FRONT_BUILD_LOG"
-    if $BUILD_CMD_INSTALL >>"$FRONT_BUILD_LOG" 2>&1; then
-        echo "Dependencias instaladas correctamente" | tee -a "$FRONT_BUILD_LOG"
-    else
-        echo "ERROR: fallo al instalar dependencias del frontend. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-    fi
-
-    echo "=== Iniciando build del frontend (npm run build) ===" | tee -a "$FRONT_BUILD_LOG"
+    echo "=== Ejecutando: npm run build ===" | tee -a "$FRONT_BUILD_LOG"
     if npm run build >>"$FRONT_BUILD_LOG" 2>&1; then
-        echo "Build frontend completado correctamente" | tee -a "$FRONT_BUILD_LOG"
+        echo "npm run build completado" | tee -a "$FRONT_BUILD_LOG"
     else
-        echo "ERROR: fallo en npm run build. Revisando causas comunes..." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-        # Detectar problemas de engine / versión de node
-        local_engine_issue=0
-        if grep -Eiq "Unsupported engine|engine " "$FRONT_BUILD_LOG"; then
-            echo "Fallo probablemente debido a versión de Node/NPM (Unsupported engine)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            local_engine_issue=1
-        fi
-        if grep -Eiq "requires.*node|requires node|requires a Node" "$FRONT_BUILD_LOG"; then
-            echo "Fallo probablemente debido a requerimientos de versión de Node detectados en logs" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            local_engine_issue=1
-        fi
-        if grep -Eiq "ERR! .*node|node.*unsupported|EBADENGINE" "$FRONT_BUILD_LOG"; then
-            echo "Error de engine/versión detectado en npm (EBADENGINE o similar)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            local_engine_issue=1
-        fi
-        # Añadir diagnóstico de versiones instaladas
-        echo "Node instalado: $(node --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-        echo "npm instalado: $(npm --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-
-        # Si se detectó problema de engine, no intentaremos reinstalar Node automáticamente
-        if [ "$local_engine_issue" -eq 1 ]; then
-            echo "ERROR: el build falló por problemas de engine/versión. Este script no instalará Node automáticamente. Por favor instala la versión requerida manualmente y vuelve a ejecutar." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-        fi
+        echo "ERROR: npm run build falló. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
     fi
 
-    # Si build existe, copiarlo a destino; si no, informar
+    # Copiar build si existe
     if [ -d "$FRONT_BUILD_SRC" ]; then
         sudo mkdir -p "$FRONT_DEST"
         sudo rm -rf "$FRONT_DEST"/* || true
