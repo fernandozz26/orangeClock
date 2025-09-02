@@ -346,6 +346,7 @@ log "Compilando frontend: npm install && npm run build"
 
 FRONT_SRC="$PROJECT_ROOT/scheduler-app"
 FRONT_BUILD_SRC="$FRONT_SRC/build"
+FRONT_PREBUILD="$PROJECT_ROOT/compilados/build"
 FRONT_DEST="/var/www/clock_frontend"
 FRONT_BUILD_LOG="/var/log/clock_frontend_build.log"
 
@@ -354,97 +355,115 @@ sudo rm -f "$FRONT_BUILD_LOG" || true
 sudo touch "$FRONT_BUILD_LOG"
 sudo chown $(whoami):$(whoami) "$FRONT_BUILD_LOG"
 
-if [ ! -d "$FRONT_SRC" ]; then
-    echo "ERROR: no se encontró el frontend en $FRONT_SRC" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+if [ -d "$FRONT_PREBUILD" ]; then
+    # Si el usuario proporcionó un build precompilado en compilados/, usarlo y omitir npm
+    echo "Usando build precompilado en $FRONT_PREBUILD. No se ejecutará npm ni se necesitará node." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+    sudo mkdir -p "$FRONT_DEST"
+    sudo rm -rf "$FRONT_DEST"/* || true
+    if sudo cp -r "$FRONT_PREBUILD"/* "$FRONT_DEST/"; then
+        sudo chown -R caddy:caddy "$FRONT_DEST"
+        sudo chmod -R a+rX "$FRONT_DEST"
+        log "Build precompilado copiado a $FRONT_DEST y permisos asignados a caddy"
+    else
+        echo "ERROR: fallo al copiar build precompilado desde $FRONT_PREBUILD a $FRONT_DEST" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+        exit 1
+    fi
+
 else
-    # Ejecutar npm como el usuario real (no root) para evitar que node_modules y archivos queden con propietario root
-    REAL_USER="${SUDO_USER:-$(whoami)}"
-    REAL_HOME="$(eval echo ~$REAL_USER)"
-
-    # Log temporal en home del usuario real (escribible por ese usuario)
-    FRONT_USER_LOG="$REAL_HOME/clock_frontend_build_user.log"
-    sudo rm -f "$FRONT_USER_LOG" || true
-    sudo -u "$REAL_USER" -H touch "$FRONT_USER_LOG" || true
-    sudo chown "$REAL_USER":"$REAL_USER" "$FRONT_USER_LOG" || true
-
-    echo "=== Ejecutando: npm install (como $REAL_USER) ===" | tee -a "$FRONT_BUILD_LOG" "$FRONT_USER_LOG"
-
-    # Ejecutar npm install en la carpeta del frontend como usuario real. Si el usuario usa nvm se intenta cargar.
-    sudo -u "$REAL_USER" -H bash -lc '
-        set -e
-        export NVM_DIR="$HOME/.nvm"
-        if [ -s "$NVM_DIR/nvm.sh" ]; then
-            . "$NVM_DIR/nvm.sh"
-            nvm use --silent || true
-        fi
-        cd "'"$FRONT_SRC"'"
-        npm install --no-audit --no-fund >> "'"$FRONT_USER_LOG"'" 2>&1
-    '
-    NPM_INSTALL_EXIT=$?
-
-    # Adjuntar log de usuario al log principal para diagnóstico
-    if [ -f "$FRONT_USER_LOG" ]; then
-        sudo bash -lc "cat '$FRONT_USER_LOG' >> '$FRONT_BUILD_LOG'"
-    fi
-
-    if [ $NPM_INSTALL_EXIT -eq 0 ]; then
-        echo "npm install completado" | tee -a "$FRONT_BUILD_LOG"
+    if [ ! -d "$FRONT_SRC" ]; then
+        echo "ERROR: no se encontró el frontend en $FRONT_SRC" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
     else
-        # Si npm falló, comprobar si en el log sólo hay WARN y no hay errores explícitos
-        if grep -E -i "npm ERR!|ERR!|\berror\b" "$FRONT_BUILD_LOG" >/dev/null 2>&1; then
-            echo "ERROR: npm install falló con errores. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            echo "Abortando instalación por fallo en npm install." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            exit 1
+        # Ejecutar npm como el usuario real (no root) para evitar que node_modules y archivos queden con propietario root
+        REAL_USER="${SUDO_USER:-$(whoami)}"
+        REAL_HOME="$(eval echo ~$REAL_USER)"
+
+        # Log temporal en home del usuario real (escribible por ese usuario)
+        FRONT_USER_LOG="$REAL_HOME/clock_frontend_build_user.log"
+        sudo rm -f "$FRONT_USER_LOG" || true
+        sudo -u "$REAL_USER" -H touch "$FRONT_USER_LOG" || true
+        sudo chown "$REAL_USER":"$REAL_USER" "$FRONT_USER_LOG" || true
+
+        echo "=== Ejecutando: npm install (como $REAL_USER) ===" | tee -a "$FRONT_BUILD_LOG" "$FRONT_USER_LOG"
+
+        # Ejecutar npm install en la carpeta del frontend como usuario real. Si el usuario usa nvm se intenta cargar.
+        sudo -u "$REAL_USER" -H bash -lc '
+            set -e
+            export NVM_DIR="$HOME/.nvm"
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+                . "$NVM_DIR/nvm.sh"
+                nvm use --silent || true
+            fi
+            cd "'"$FRONT_SRC"'"
+            npm install --no-audit --no-fund >> "'"$FRONT_USER_LOG"'" 2>&1
+        '
+        NPM_INSTALL_EXIT=$?
+
+        # Adjuntar log de usuario al log principal para diagnóstico
+        if [ -f "$FRONT_USER_LOG" ]; then
+            sudo bash -lc "cat '$FRONT_USER_LOG' >> '$FRONT_BUILD_LOG'"
+        fi
+
+        if [ $NPM_INSTALL_EXIT -eq 0 ]; then
+            echo "npm install completado" | tee -a "$FRONT_BUILD_LOG"
         else
-            echo "ADVERTENCIA: npm install devolvió código de error pero sólo se detectaron advertencias en el log. Continuando." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            # Si npm falló, comprobar si en el log sólo hay WARN y no hay errores explícitos
+            if grep -E -i "npm ERR!|ERR!|\berror\b" "$FRONT_BUILD_LOG" >/dev/null 2>&1; then
+                echo "ERROR: npm install falló con errores. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+                echo "Abortando instalación por fallo en npm install." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+                exit 1
+            else
+                echo "ADVERTENCIA: npm install devolvió código de error pero sólo se detectaron advertencias en el log. Continuando." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            fi
         fi
-    fi
 
-    echo "=== Ejecutando: npm run build (como $REAL_USER) ===" | tee -a "$FRONT_BUILD_LOG" "$FRONT_USER_LOG"
+        echo "=== Ejecutando: npm run build (como $REAL_USER) ===" | tee -a "$FRONT_BUILD_LOG" "$FRONT_USER_LOG"
 
-    sudo -u "$REAL_USER" -H bash -lc '
-        set -e
-        export NVM_DIR="$HOME/.nvm"
-        if [ -s "$NVM_DIR/nvm.sh" ]; then
-            . "$NVM_DIR/nvm.sh"
-            nvm use --silent || true
+        sudo -u "$REAL_USER" -H bash -lc '
+            set -e
+            # Evitar que create-react-app trate warnings como errores en entornos CI
+            export CI=false
+            export NVM_DIR="$HOME/.nvm"
+            if [ -s "$NVM_DIR/nvm.sh" ]; then
+                . "$NVM_DIR/nvm.sh"
+                nvm use --silent || true
+            fi
+            cd "'"$FRONT_SRC"'"
+            npm run build >> "'"$FRONT_USER_LOG"'" 2>&1
+        '
+        NPM_BUILD_EXIT=$?
+
+        # Adjuntar log de usuario al log principal
+        if [ -f "$FRONT_USER_LOG" ]; then
+            sudo bash -lc "cat '$FRONT_USER_LOG' >> '$FRONT_BUILD_LOG'"
         fi
-        cd "'"$FRONT_SRC"'"
-        npm run build >> "'"$FRONT_USER_LOG"'" 2>&1
-    '
-    NPM_BUILD_EXIT=$?
 
-    # Adjuntar log de usuario al log principal
-    if [ -f "$FRONT_USER_LOG" ]; then
-        sudo bash -lc "cat '$FRONT_USER_LOG' >> '$FRONT_BUILD_LOG'"
-    fi
-
-    if [ $NPM_BUILD_EXIT -eq 0 ]; then
-        echo "npm run build completado" | tee -a "$FRONT_BUILD_LOG"
-    else
-        # Igual lógica: si hay errores reales abortar, si sólo WARN continuar
-        if grep -E -i "npm ERR!|ERR!|\berror\b" "$FRONT_BUILD_LOG" >/dev/null 2>&1; then
-            echo "ERROR: npm run build falló con errores. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            echo "Abortando instalación por fallo en npm run build." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
-            exit 1
+        if [ $NPM_BUILD_EXIT -eq 0 ]; then
+            echo "npm run build completado" | tee -a "$FRONT_BUILD_LOG"
         else
-            echo "ADVERTENCIA: npm run build devolvió código de error pero sólo se detectaron advertencias en el log. Continuando." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            # Igual lógica: si hay errores reales abortar, si sólo WARN continuar
+            if grep -E -i "npm ERR!|ERR!|\berror\b" "$FRONT_BUILD_LOG" >/dev/null 2>&1; then
+                echo "ERROR: npm run build falló con errores. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+                echo "Abortando instalación por fallo en npm run build." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+                exit 1
+            else
+                echo "ADVERTENCIA: npm run build devolvió código de error pero sólo se detectaron advertencias en el log. Continuando." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            fi
         fi
-    fi
 
-    # Copiar build si existe
-    if [ -d "$FRONT_BUILD_SRC" ]; then
-        sudo mkdir -p "$FRONT_DEST"
-        sudo rm -rf "$FRONT_DEST"/* || true
-        if sudo cp -r "$FRONT_BUILD_SRC"/* "$FRONT_DEST/"; then
-            sudo chown -R caddy:caddy "$FRONT_DEST"
-            sudo chmod -R a+rX "$FRONT_DEST"
-            log "Build del frontend copiado a $FRONT_DEST y permisos asignados a caddy"
+        # Copiar build si existe
+        if [ -d "$FRONT_BUILD_SRC" ]; then
+            sudo mkdir -p "$FRONT_DEST"
+            sudo rm -rf "$FRONT_DEST"/* || true
+            if sudo cp -r "$FRONT_BUILD_SRC"/* "$FRONT_DEST/"; then
+                sudo chown -R caddy:caddy "$FRONT_DEST"
+                sudo chmod -R a+rX "$FRONT_DEST"
+                log "Build del frontend copiado a $FRONT_DEST y permisos asignados a caddy"
+            else
+                echo "ERROR: fallo al copiar build del frontend a $FRONT_DEST" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            fi
         else
-            echo "ERROR: fallo al copiar build del frontend a $FRONT_DEST" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            echo "WARNING: no se encontró build en $FRONT_BUILD_SRC tras intentar compilar. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
         fi
-    else
-        echo "WARNING: no se encontró build en $FRONT_BUILD_SRC tras intentar compilar. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
     fi
 fi
 
