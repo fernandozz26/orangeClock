@@ -155,6 +155,98 @@ if command -v npm >/dev/null 2>&1; then
     npm install -g npm@8 >>"$BACKEND_LOG" 2>&1 || log "Advertencia: no se pudo forzar npm@8, se continúa con la versión instalada"
 fi
 
+# Función para instalar Node.js
+install_node_version() {
+    local major=$1
+    echo "Instalando Node.js v$major (intento via NodeSource)" | tee -a "$BACKEND_LOG"
+
+    # Registrar arquitectura
+    ARCH=$(uname -m)
+    echo "Arquitectura detectada: $ARCH" | tee -a "$BACKEND_LOG"
+
+    # Preparar output temporal
+    TMP_OUT=$(mktemp)
+
+    # Intentar NodeSource
+    set +e
+    curl -fsSL "https://deb.nodesource.com/setup_${major}.x" > "$TMP_OUT" 2>>"$BACKEND_LOG"
+    if [ $? -eq 0 ]; then
+        bash "$TMP_OUT" >>"$BACKEND_LOG" 2>&1
+        if apt-get install -y nodejs >>"$BACKEND_LOG" 2>&1; then
+            echo "Node v$major instalado via NodeSource" | tee -a "$BACKEND_LOG"
+            rm -f "$TMP_OUT"
+            set -e
+            return 0
+        else
+            echo "Error: apt-get install nodejs falló al intentar NodeSource (v$major). Ver $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+        fi
+    else
+        echo "Error: curl fallo descargando NodeSource setup para v$major" | tee -a "$BACKEND_LOG"
+    fi
+    set -e
+
+    # Si NodeSource falla, intentar tarball oficial por compatibilidad
+    echo "Intentando fallback: descargar tarball oficial de nodejs.org para v${major}.x" | tee -a "$BACKEND_LOG"
+
+    # Determinar arquitectura para el nombre del tarball
+    UNAME_M=$(uname -m)
+    case "$UNAME_M" in
+        x86_64|amd64) NODE_ARCH="x64" ;;
+        aarch64|arm64) NODE_ARCH="arm64" ;;
+        i686|i386) NODE_ARCH="x86" ;;
+        armv7l) NODE_ARCH="armv7l" ;;
+        *) NODE_ARCH="x64" ;;
+    esac
+    echo "Arquitectura mapeada: $UNAME_M -> $NODE_ARCH" | tee -a "$BACKEND_LOG"
+
+    # Obtener la versión exacta más reciente para el major consultando index.json
+    IDX_JSON=$(mktemp)
+    if curl -fsSL "https://nodejs.org/dist/index.json" -o "$IDX_JSON" >>"$BACKEND_LOG" 2>&1; then
+        VERSION=$(grep -oE '"version":\s*"v[0-9]+\.[0-9]+\.[0-9]+"' "$IDX_JSON" | sed -E 's/"version":\s*"(v[0-9]+\.[0-9]+\.[0-9]+)"/\1/' | grep "^v${major}\." | head -n1 || true)
+        rm -f "$IDX_JSON"
+    else
+        echo "Aviso: no se pudo descargar index.json para determinar versión exacta; se usará latest-v${major}.x" | tee -a "$BACKEND_LOG"
+        VERSION=""
+    fi
+
+    if [ -z "$VERSION" ]; then
+        # fallback a latest-v{major}.x
+        VERSION="latest-v${major}.x"
+        NODE_TARBALL_URL="https://nodejs.org/dist/${VERSION}/node-${VERSION}-linux-${NODE_ARCH}.tar.xz"
+    else
+        NODE_TARBALL_URL="https://nodejs.org/dist/${VERSION}/node-${VERSION}-linux-${NODE_ARCH}.tar.xz"
+    fi
+
+    TMPDIR=$(mktemp -d)
+    TARFILE="$TMPDIR/node.tar.xz"
+
+    echo "Descargando $NODE_TARBALL_URL" | tee -a "$BACKEND_LOG"
+    if curl -fsSL -o "$TARFILE" "$NODE_TARBALL_URL" >>"$BACKEND_LOG" 2>&1; then
+        echo "Descarga completada, extrayendo en /usr/local (requiere permisos)" | tee -a "$BACKEND_LOG"
+        # Hacer backup de /usr/local/bin/node y /usr/local/bin/npm si existen
+        if [ -x "/usr/local/bin/node" ]; then
+            echo "Backup de /usr/local/bin/node existente en /usr/local/bin/node.bak" | tee -a "$BACKEND_LOG"
+            mv /usr/local/bin/node /usr/local/bin/node.bak || true
+        fi
+        if [ -x "/usr/local/bin/npm" ]; then
+            echo "Backup de /usr/local/bin/npm existente en /usr/local/bin/npm.bak" | tee -a "$BACKEND_LOG"
+            mv /usr/local/bin/npm /usr/local/bin/npm.bak || true
+        fi
+        tar -C /usr/local --strip-components=1 -xJf "$TARFILE" >>"$BACKEND_LOG" 2>&1 || {
+            echo "Error al extraer tarball en /usr/local" | tee -a "$BACKEND_LOG"
+            rm -rf "$TMPDIR"
+            return 1
+        }
+        echo "Node instalado desde tarball oficial (${VERSION})" | tee -a "$BACKEND_LOG"
+        rm -rf "$TMPDIR"
+        return 0
+    else
+        echo "ERROR: no se pudo descargar tarball oficial. URL intentada: $NODE_TARBALL_URL" | tee -a "$BACKEND_LOG"
+        rm -rf "$TMPDIR"
+        return 1
+    fi
+}
+
 # Configuración del Backend con validaciones y logs
 log "Iniciando configuración del backend (root)..."
 clean_service "clock_backend.service"
