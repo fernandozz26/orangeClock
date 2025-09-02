@@ -69,6 +69,27 @@ sudo rm -f "$BACKEND_LOG" || true
 sudo touch "$BACKEND_LOG"
 sudo chown $(whoami):$(whoami) "$BACKEND_LOG"
 
+# Detectar y usar Python 3 disponible (no sobrescribir sistema)
+PYTHON_CANDIDATES=("python3.11" "python3.10" "python3.9" "python3.8" "python3")
+PYTHON=""
+for p in "${PYTHON_CANDIDATES[@]}"; do
+    if command -v "$p" >/dev/null 2>&1; then
+        if "$p" -c 'import sys; sys.exit(0 if sys.version_info[0]==3 else 1)'; then
+            PYTHON="$p"
+            break
+        fi
+    fi
+done
+if [ -z "$PYTHON" ]; then
+    echo "ERROR: no se encontró ningún intérprete Python 3 en el sistema. Instala python3." | tee -a "$BACKEND_LOG"
+    exit 1
+fi
+log "Usando intérprete Python: $PYTHON"
+
+# Variables para el venv (se establecerán cuando exista o se cree)
+VENV_PY="$BACKEND_DIR/venv/bin/python"
+VENV_PIP="$BACKEND_DIR/venv/bin/pip"
+
 # Actualizar e instalar dependencias básicas
 sudo apt-get update
 install_if_missing "curl"
@@ -76,57 +97,63 @@ install_if_missing "python3"
 install_if_missing "python3-venv"
 install_if_missing "python3-pip"
 
-# Forzar instalación de Node.js v12.22.9 y npm 8.5.1
-log "Asegurando Node.js v12.22.9 y npm 8.5.1"
-NODE_VERSION="12.22.9"
-NPM_VERSION="8.5.1"
-
-# Eliminar paquetes previos que puedan interferir
-if dpkg -l | grep -q nodejs || dpkg -l | grep -q npm; then
-    log "Eliminando paquetes nodejs/npm instalados por apt (si existen)"
-    apt-get remove -y nodejs npm || true
-fi
-
-TMPDIR=$(mktemp -d)
-NODE_TARBALL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz"
-log "Descargando $NODE_TARBALL"
-if curl -fsSL -o "$TMPDIR/node.tar.xz" "$NODE_TARBALL"; then
-    log "Descargado correctamente"
+# Asegurar que Python3 esté instalado (si no, instalarlo)
+if ! command -v python3 >/dev/null 2>&1; then
+    log "python3 no encontrado. Instalando python3 y herramientas relacionadas..."
+    apt-get update
+    apt-get install -y python3 python3-venv python3-pip ca-certificates || { echo "ERROR: no se pudo instalar python3" | tee -a "$BACKEND_LOG"; exit 1; }
+    log "python3 instalado"
 else
-    echo "ERROR: fallo al descargar Node.js v$NODE_VERSION" | tee -a "$BACKEND_LOG"
-    rm -rf "$TMPDIR"
-    exit 1
+    log "python3 ya instalado: $(python3 --version)"
 fi
 
-log "Instalando Node.js en /usr/local"
-# Extraer sobre /usr/local, sobrescribiendo binarios
-tar -C /usr/local --strip-components=1 -xJf "$TMPDIR/node.tar.xz" || { echo "ERROR: fallo al extraer Node.js" | tee -a "$BACKEND_LOG"; rm -rf "$TMPDIR"; exit 1; }
-rm -rf "$TMPDIR"
+# Determinar versión de Node requerida por package.json (engines.node). Si no está presente, usar 18
+FRONT_PKG="$PROJECT_ROOT/scheduler-app/package.json"
+REQ_NODE_SPEC=""
+REQ_NODE_MAJOR=""
+if [ -f "$FRONT_PKG" ]; then
+    REQ_NODE_SPEC=$($PYTHON -c 'import json,sys
+try:
+    with open(sys.argv[1]) as f:
+        j=json.load(f)
+        engines=j.get("engines",{})
+        print(engines.get("node",""))
+except Exception:
+    print("")' "$FRONT_PKG" 2>/dev/null || echo "")
+fi
 
-# Forzar que /usr/local/bin esté primero en PATH para este script
-export PATH="/usr/local/bin:$PATH"
+if [ -n "$REQ_NODE_SPEC" ]; then
+    REQ_NODE_MAJOR=$(echo "$REQ_NODE_SPEC" | grep -oE '[0-9]+' | head -n1 || true)
+fi
+if [ -z "$REQ_NODE_MAJOR" ]; then
+    REQ_NODE_MAJOR=18
+fi
+log "Especificación de Node en package.json: '$REQ_NODE_SPEC' -> requerimiento estimado: v$REQ_NODE_MAJOR"
 
-# Instalar npm requerido
+# Comprobar Node instalado
+INST_NODE_MAJOR=""
+if command -v node >/dev/null 2>&1; then
+    INST_NODE_MAJOR=$(node --version 2>/dev/null | grep -oE '[0-9]+' | head -n1 || true)
+fi
+
+if [ -n "$INST_NODE_MAJOR" ] && [ "$INST_NODE_MAJOR" -ge "$REQ_NODE_MAJOR" ]; then
+    log "Node instalado (v$INST_NODE_MAJOR) satisface el requisito v$REQ_NODE_MAJOR. No se instalará otra versión."
+else
+    log "Node instalado (v${INST_NODE_MAJOR:-none}) no satisface requisito v$REQ_NODE_MAJOR. Instalando Node v$REQ_NODE_MAJOR via NodeSource"
+    if ! install_node_version "$REQ_NODE_MAJOR"; then
+        log "Falló la instalación de Node v$REQ_NODE_MAJOR via NodeSource. Intentando instalar v18 como fallback."
+        if ! install_node_version 18; then
+            echo "ERROR: no se pudo instalar una versión adecuada de Node (intentadas: $REQ_NODE_MAJOR, 18)" | tee -a "$BACKEND_LOG"
+            exit 1
+        fi
+    fi
+fi
+
+# Asegurar npm en una versión moderna (intentar mantener equipo estable)
 if command -v npm >/dev/null 2>&1; then
-    log "Instalando npm@$NPM_VERSION globalmente"
-    npm install -g "npm@${NPM_VERSION}" >>"$BACKEND_LOG" 2>&1 || echo "WARNING: fallo al instalar npm@${NPM_VERSION}" | tee -a "$BACKEND_LOG"
-else
-    echo "ERROR: npm no está disponible tras instalar Node.js" | tee -a "$BACKEND_LOG"
+    log "Asegurando npm moderno: actualizando a npm@8 (si procede)"
+    npm install -g npm@8 >>"$BACKEND_LOG" 2>&1 || log "Advertencia: no se pudo forzar npm@8, se continúa con la versión instalada"
 fi
-
-# Validar versiones exactas
-INST_NODE_VER=$(node --version 2>/dev/null || echo "")
-INST_NPM_VER=$(npm --version 2>/dev/null || echo "")
-log "Node instalado: $INST_NODE_VER, npm instalado: $INST_NPM_VER"
-if [ "$INST_NODE_VER" != "v${NODE_VERSION}" ]; then
-    echo "ERROR: Node.js no es v${NODE_VERSION} (instalado: $INST_NODE_VER)" | tee -a "$BACKEND_LOG"
-fi
-if [ "$INST_NPM_VER" != "${NPM_VERSION}" ]; then
-    echo "ERROR: npm no es ${NPM_VERSION} (instalado: $INST_NPM_VER)" | tee -a "$BACKEND_LOG"
-fi
-
-# Mostrar versiones
-log "Versiones instaladas: $(node --version 2>/dev/null || echo 'node no instalado') $(npm --version 2>/dev/null || echo 'npm no instalado')"
 
 # Configuración del Backend con validaciones y logs
 log "Iniciando configuración del backend (root)..."
@@ -159,7 +186,7 @@ fi
 
 log "Creando/validando entorno virtual"
 if [ ! -d "$BACKEND_DIR/venv" ]; then
-    sudo python3 -m venv "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG" || { echo "ERROR: fallo al crear venv" | tee -a "$BACKEND_LOG"; exit 1; }
+    sudo $PYTHON -m venv "$BACKEND_DIR/venv" 2>>"$BACKEND_LOG" || { echo "ERROR: fallo al crear venv" | tee -a "$BACKEND_LOG"; exit 1; }
     log "Entorno virtual creado"
 else
     log "Entorno virtual ya existe"
@@ -167,7 +194,7 @@ fi
 
 log "Instalando requirements (si existe)"
 if [ -f "$BACKEND_DIR/requirements.txt" ]; then
-    sudo "$BACKEND_DIR/venv/bin/pip" install -r "$BACKEND_DIR/requirements.txt" >>"$BACKEND_LOG" 2>&1 || echo "WARNING: pip install devolvió error, revisar $BACKEND_LOG"
+    sudo "$VENV_PIP" install -r "$BACKEND_DIR/requirements.txt" >>"$BACKEND_LOG" 2>&1 || echo "WARNING: pip install devolvió error, revisar $BACKEND_LOG"
 else
     echo "WARNING: No existe requirements.txt en $BACKEND_DIR" | tee -a "$BACKEND_LOG"
 fi
@@ -211,9 +238,9 @@ log "Resumen rápido de diagnóstico (backend):"
 echo "---- $BACKEND_DIR content ----" | tee -a "$BACKEND_LOG"
 ls -la "$BACKEND_DIR" | tee -a "$BACKEND_LOG"
 echo "---- python version ----" | tee -a "$BACKEND_LOG"
-"$BACKEND_DIR/venv/bin/python3" --version 2>&1 | tee -a "$BACKEND_LOG"
+"$VENV_PY" --version 2>&1 | tee -a "$BACKEND_LOG"
 echo "---- pip freeze (venv) ----" | tee -a "$BACKEND_LOG"
-sudo "$BACKEND_DIR/venv/bin/pip" freeze 2>>"$BACKEND_LOG" | tee -a "$BACKEND_LOG"
+sudo "$VENV_PIP" freeze 2>>"$BACKEND_LOG" | tee -a "$BACKEND_LOG"
 
 # Mostrar tail del log al usuario
 log "Mostrando últimas líneas del log de backend:"
@@ -263,18 +290,41 @@ else
     else
         echo "ERROR: fallo en npm run build. Revisando causas comunes..." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
         # Detectar problemas de engine / versión de node
+        local_engine_issue=0
         if grep -Eiq "Unsupported engine|engine " "$FRONT_BUILD_LOG"; then
             echo "Fallo probablemente debido a versión de Node/NPM (Unsupported engine)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            local_engine_issue=1
         fi
         if grep -Eiq "requires.*node|requires node|requires a Node" "$FRONT_BUILD_LOG"; then
             echo "Fallo probablemente debido a requerimientos de versión de Node detectados en logs" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            local_engine_issue=1
         fi
         if grep -Eiq "ERR! .*node|node.*unsupported|EBADENGINE" "$FRONT_BUILD_LOG"; then
             echo "Error de engine/versión detectado en npm (EBADENGINE o similar)" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            local_engine_issue=1
         fi
         # Añadir diagnóstico de versiones instaladas
         echo "Node instalado: $(node --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
         echo "npm instalado: $(npm --version 2>/dev/null || echo 'no disponible')" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+
+        # Si se detectó problema de engine, reintentar instalando Node v18 y rehacer build una vez
+        if [ "$local_engine_issue" -eq 1 ]; then
+            echo "Intentando reinstalar Node v18 y reintentar build..." | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            if install_node_version 18; then
+                # forzar npm a versión estable moderna
+                npm install -g npm@8 >>"$FRONT_BUILD_LOG" 2>&1 || true
+                # limpiar node_modules y volver a instalar
+                rm -rf node_modules package-lock.json || true
+                echo "Reintentando instalación de dependencias y build con Node v18" | tee -a "$FRONT_BUILD_LOG"
+                if $BUILD_CMD_INSTALL >>"$FRONT_BUILD_LOG" 2>&1 && npm run build >>"$FRONT_BUILD_LOG" 2>&1; then
+                    echo "Build frontend completado correctamente tras actualizar Node a v18" | tee -a "$FRONT_BUILD_LOG"
+                else
+                    echo "ERROR: el build falló aun después de instalar Node v18. Revisa $FRONT_BUILD_LOG" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+                fi
+            else
+                echo "ERROR: no se pudo instalar Node v18 para reintentar build" | tee -a "$BACKEND_LOG" "$FRONT_BUILD_LOG"
+            fi
+        fi
     fi
 
     # Si build existe, copiarlo a destino; si no, informar
