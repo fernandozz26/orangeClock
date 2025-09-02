@@ -187,6 +187,39 @@ install_if_missing "python3"
 install_if_missing "python3-venv"
 install_if_missing "python3-pip"
 
+# Intentar asegurar que tkinter (python3-tk) esté disponible para que el backend pueda mostrar GUI localmente.
+# Si no está disponible, se intentará instalar según el gestor de paquetes del sistema.
+if ! python3 -c "import tkinter" >/dev/null 2>&1; then
+    echo "python3-tk no disponible: se intentará instalarlo según la distribución" | tee -a "$BACKEND_LOG"
+    if command -v apt-get >/dev/null 2>&1; then
+        echo "Instalando python3-tk vía apt-get..." | tee -a "$BACKEND_LOG"
+        apt-get update >>"$BACKEND_LOG" 2>&1 || true
+        if apt-get install -y python3-tk >>"$BACKEND_LOG" 2>&1; then
+            echo "python3-tk instalado exitosamente" | tee -a "$BACKEND_LOG"
+        else
+            echo "Fallo al instalar python3-tk vía apt-get. Revisa $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+        fi
+    elif command -v dnf >/dev/null 2>&1; then
+        echo "Instalando python3-tkinter vía dnf..." | tee -a "$BACKEND_LOG"
+        if dnf install -y python3-tkinter >>"$BACKEND_LOG" 2>&1; then
+            echo "python3-tkinter instalado exitosamente" | tee -a "$BACKEND_LOG"
+        else
+            echo "Fallo al instalar python3-tkinter vía dnf. Revisa $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+        fi
+    elif command -v pacman >/dev/null 2>&1; then
+        echo "Instalando tk vía pacman..." | tee -a "$BACKEND_LOG"
+        if pacman -Sy --noconfirm tk >>"$BACKEND_LOG" 2>&1; then
+            echo "tk instalado exitosamente" | tee -a "$BACKEND_LOG"
+        else
+            echo "Fallo al instalar tk vía pacman. Revisa $BACKEND_LOG" | tee -a "$BACKEND_LOG"
+        fi
+    else
+        echo "Gestor de paquetes no detectado o no soportado: no se puede instalar python3-tk automáticamente. Instálalo manualmente si necesitas GUI." | tee -a "$BACKEND_LOG"
+    fi
+else
+    echo "python3-tk ya disponible" | tee -a "$BACKEND_LOG"
+fi
+
 # Asegurar que Python3 esté instalado (si no, instalarlo)
 if ! command -v python3 >/dev/null 2>&1; then
     log "python3 no encontrado. Instalando python3 y herramientas relacionadas..."
