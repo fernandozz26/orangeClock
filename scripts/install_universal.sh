@@ -107,47 +107,48 @@ else
     log "python3 ya instalado: $(python3 --version)"
 fi
 
-# Determinar versión de Node requerida por package.json (engines.node). Si no está presente, usar 18
-FRONT_PKG="$PROJECT_ROOT/scheduler-app/package.json"
-REQ_NODE_SPEC=""
-REQ_NODE_MAJOR=""
-if [ -f "$FRONT_PKG" ]; then
-    REQ_NODE_SPEC=$($PYTHON -c 'import json,sys
-try:
-    with open(sys.argv[1]) as f:
-        j=json.load(f)
-        engines=j.get("engines",{})
-        print(engines.get("node",""))
-except Exception:
-    print("")' "$FRONT_PKG" 2>/dev/null || echo "")
-fi
-
-if [ -n "$REQ_NODE_SPEC" ]; then
-    REQ_NODE_MAJOR=$(echo "$REQ_NODE_SPEC" | grep -oE '[0-9]+' | head -n1 || true)
-fi
-if [ -z "$REQ_NODE_MAJOR" ]; then
-    REQ_NODE_MAJOR=18
-fi
-log "Especificación de Node en package.json: '$REQ_NODE_SPEC' -> requerimiento estimado: v$REQ_NODE_MAJOR"
-
-# Comprobar Node instalado
-INST_NODE_MAJOR=""
-if command -v node >/dev/null 2>&1; then
-    INST_NODE_MAJOR=$(node --version 2>/dev/null | grep -oE '[0-9]+' | head -n1 || true)
-fi
-
-if [ -n "$INST_NODE_MAJOR" ] && [ "$INST_NODE_MAJOR" -ge "$REQ_NODE_MAJOR" ]; then
-    log "Node instalado (v$INST_NODE_MAJOR) satisface el requisito v$REQ_NODE_MAJOR. No se instalará otra versión."
-else
-    log "Node instalado (v${INST_NODE_MAJOR:-none}) no satisface requisito v$REQ_NODE_MAJOR. Instalando Node v$REQ_NODE_MAJOR via NodeSource"
-    if ! install_node_version "$REQ_NODE_MAJOR"; then
-        log "Falló la instalación de Node v$REQ_NODE_MAJOR via NodeSource. Intentando instalar v18 como fallback."
-        if ! install_node_version 18; then
-            echo "ERROR: no se pudo instalar una versión adecuada de Node (intentadas: $REQ_NODE_MAJOR, 18)" | tee -a "$BACKEND_LOG"
-            exit 1
+# Verificar presencia de nodejs; priorizar Node v20 si existe en el sistema
+ensure_node20() {
+    DESIRED_MAJOR=20
+    # Si node en PATH ya es v20, usarlo
+    if command -v node >/dev/null 2>&1; then
+        curv=$(node --version 2>/dev/null || echo "")
+        if [[ "$curv" == v${DESIRED_MAJOR}* ]]; then
+            log "Node detectado en PATH: $curv"
+            return 0
         fi
     fi
-fi
+
+    # Rutas comunes donde puede estar instalado Node v20
+    CANDIDATES=(/usr/local/bin/node /usr/bin/node /snap/bin/node)
+
+    # Buscar en nvm y /opt también
+    for f in /home/*/.nvm/versions/node/*/bin/node /opt/node*/bin/node /opt/node*/node/bin/node 2>/dev/null; do
+        CANDIDATES+=("$f")
+    done
+
+    # Comprobar candidatos y ajustar PATH si encontramos v20
+    for nodebin in "${CANDIDATES[@]}"; do
+        if [ -x "$nodebin" ]; then
+            ver=$("$nodebin" --version 2>/dev/null || echo "")
+            if [[ "$ver" == v${DESIRED_MAJOR}* ]]; then
+                node_dir=$(dirname "$nodebin")
+                export PATH="$node_dir:$PATH"
+                hash -r 2>/dev/null || true
+                log "Se ha encontrado Node $ver en $nodebin. PATH ajustado para usarlo." | tee -a "$BACKEND_LOG"
+                return 0
+            fi
+        fi
+    done
+
+    # Si llegamos aquí, no se encontró Node v20
+    cur="$(node --version 2>/dev/null || echo 'no instalado')"
+    echo "ERROR: Node.js v20 requerido pero no se encontró disponible en PATH ni en ubicaciones comunes (detected: $cur)." | tee -a "$BACKEND_LOG"
+    echo "Instala Node.js 20 (p. ej. desde https://nodejs.org) o asegúrate de que el binario v20 esté en PATH antes de ejecutar este script." | tee -a "$BACKEND_LOG"
+    exit 1
+}
+
+ensure_node20
 
 # Asegurar npm en una versión moderna (intentar mantener equipo estable)
 if command -v npm >/dev/null 2>&1; then
